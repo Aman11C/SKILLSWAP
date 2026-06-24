@@ -1,0 +1,6 @@
+{
+  "name": "SkillSwap",
+  "description": "SkillSwap matches students by what they teach and what they learn. Find hackathon teammates, co-founders, and project collaborators — fast.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
