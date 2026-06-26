@@ -1,219 +1,267 @@
 import { useState, useEffect } from 'react';
 import { Profile, MatchRequest, Message, StudyTeam } from './types';
-import { 
-  INITIAL_PROFILES, 
-  INITIAL_TEAMS, 
-  INITIAL_MESSAGES 
-} from './data';
 import Landing from './components/Landing';
 import Browse from './components/Browse';
 import Messenger from './components/Messenger';
 import Groups from './components/Groups';
 import ProfileEditor from './components/ProfileEditor';
-import BrutalistButton from './components/BrutalistButton';
+import LoadingScreen from './components/LoadingScreen';
+import ErrorBanner from './components/ErrorBanner';
+
+// Import Supabase and services
+import { supabase } from './lib/supabase';
+import {
+  fetchAllProfiles,
+  ensureUserProfile,
+  upsertProfile
+} from './services/profileService';
+import {
+  fetchAllTeams,
+  createTeam,
+  joinTeam,
+  leaveTeam
+} from './services/teamService';
+import {
+  fetchConnectionsForUser,
+  createConnection,
+  updateConnectionStatus,
+  fetchMessagesForUser,
+  sendMessage
+} from './services/messageService';
+
 import { 
   Compass, 
   MessageSquare, 
   Users, 
   User, 
-  LogOut, 
   ArrowLeft,
-  Sparkles,
-  Bell
+  Sparkles
 } from 'lucide-react';
 
 export default function App() {
   // Navigation State
   const [currentTab, setCurrentTab] = useState<'landing' | 'explore' | 'messenger' | 'groups' | 'profile'>('landing');
   
-  // Persistence States
-  const [profiles, setProfiles] = useState<Profile[]>(() => {
-    const saved = localStorage.getItem('skillswap_profiles');
-    return saved ? JSON.parse(saved) : INITIAL_PROFILES;
-  });
-
-  const [userProfile, setUserProfile] = useState<Profile>(() => {
-    const saved = localStorage.getItem('skillswap_user');
-    if (saved) return JSON.parse(saved);
-    const userMe = INITIAL_PROFILES.find(p => p.id === 'user_me');
-    return userMe || INITIAL_PROFILES[0];
-  });
-
-  const [matchRequests, setMatchRequests] = useState<MatchRequest[]>(() => {
-    const saved = localStorage.getItem('skillswap_requests');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [messages, setMessages] = useState<Message[]>(() => {
-    const saved = localStorage.getItem('skillswap_messages');
-    return saved ? JSON.parse(saved) : INITIAL_MESSAGES;
-  });
-
-  const [teams, setTeams] = useState<StudyTeam[]>(() => {
-    const saved = localStorage.getItem('skillswap_teams');
-    return saved ? JSON.parse(saved) : INITIAL_TEAMS;
-  });
+  // Supabase Persistent States
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [userProfile, setUserProfile] = useState<Profile | null>(null);
+  const [matchRequests, setMatchRequests] = useState<MatchRequest[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [teams, setTeams] = useState<StudyTeam[]>([]);
 
   const [systemAlert, setSystemAlert] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Sync state with localStorage
-  useEffect(() => {
-    localStorage.setItem('skillswap_profiles', JSON.stringify(profiles));
-  }, [profiles]);
+  // Initialize and load all data from Supabase
+  const initApp = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      // 1. Authenticate anonymously
+      let userId = '';
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+
+      if (session) {
+        userId = session.user.id;
+      } else {
+        const { data: authData, error: authError } = await supabase.auth.signInAnonymously();
+        if (authError) throw authError;
+        userId = authData.user?.id || '';
+      }
+
+      if (!userId) {
+        throw new Error('Authentication failed: No user ID established.');
+      }
+
+      // 2. Ensure profile exists for user in public.profiles table
+      const profile = await ensureUserProfile(userId);
+      setUserProfile(profile);
+
+      // 3. Fetch all application data
+      const [allProfiles, allTeams, allMessages, allConns] = await Promise.all([
+        fetchAllProfiles(),
+        fetchAllTeams(userId),
+        fetchMessagesForUser(userId),
+        fetchConnectionsForUser(userId)
+      ]);
+
+      setProfiles(allProfiles);
+      setTeams(allTeams);
+      setMessages(allMessages);
+      setMatchRequests(allConns);
+    } catch (err: any) {
+      console.error('Initialization error:', err);
+      setError(err.message || 'Failed to sync with database. Verify connection keys.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    localStorage.setItem('skillswap_user', JSON.stringify(userProfile));
-    // Keep user profile updated in profiles array as well
-    setProfiles(prev => prev.map(p => p.id === 'user_me' ? userProfile : p));
-  }, [userProfile]);
-
-  useEffect(() => {
-    localStorage.setItem('skillswap_requests', JSON.stringify(matchRequests));
-  }, [matchRequests]);
-
-  useEffect(() => {
-    localStorage.setItem('skillswap_messages', JSON.stringify(messages));
-  }, [messages]);
-
-  useEffect(() => {
-    localStorage.setItem('skillswap_teams', JSON.stringify(teams));
-  }, [teams]);
+    initApp();
+  }, []);
 
   // Handler: Request a new match
-  const handleRequestMatch = (receiverId: string, proposedSkill: string, messageText: string) => {
-    const newRequest: MatchRequest = {
-      id: `req_${Date.now()}`,
-      senderId: 'user_me',
-      receiverId,
-      status: 'pending',
-      proposedSkill,
-      message: messageText,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
+  const handleRequestMatch = async (receiverId: string, proposedSkill: string, messageText: string) => {
+    if (!userProfile) return;
+    try {
+      const newConn = await createConnection({
+        senderId: userProfile.id,
+        receiverId,
+        status: 'pending',
+        proposedSkill,
+        message: messageText
+      });
 
-    setMatchRequests(prev => [...prev, newRequest]);
+      setMatchRequests(prev => [...prev, newConn]);
 
-    // Simulate peer approval response
-    const peer = profiles.find(p => p.id === receiverId);
-    if (!peer) return;
+      // Simulate peer approval response
+      const peer = profiles.find(p => p.id === receiverId);
+      if (!peer) return;
 
-    setTimeout(() => {
-      // 1. Mark request as accepted
-      setMatchRequests(current => 
-        current.map(r => r.id === newRequest.id ? { ...r, status: 'accepted' } : r)
-      );
+      setTimeout(async () => {
+        try {
+          // Accept request in Supabase
+          await updateConnectionStatus(newConn.id, 'accepted');
+          setMatchRequests(current => 
+            current.map(r => r.id === newConn.id ? { ...r, status: 'accepted' } : r)
+          );
 
-      // 2. Insert welcoming peer message to chat
-      const acceptMsg: Message = {
-        id: `msg_auto_${Date.now()}`,
-        swapId: peer.id,
-        senderId: peer.id,
-        text: `Hey Aman! I accepted your SkillSwap request. I'd love to trade some of my ${peer.teachSkills[0]} knowledge for your ${proposedSkill}. Let's coordinate below!`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
+          // Add simulated welcoming peer message
+          const acceptMsg = await sendMessage({
+            senderId: peer.id,
+            receiverId: userProfile.id,
+            text: `Hey! I accepted your SkillSwap request. I'd love to trade some of my ${peer.teachSkills[0] || 'skills'} knowledge for your ${proposedSkill}. Let's coordinate below!`
+          });
 
-      setMessages(currMsg => [...currMsg, acceptMsg]);
-      
-      // 3. Highlight with banner alert
-      setSystemAlert(`🎉 Swap Match Granted! ${peer.name} approved your proposal. Go to Chats to connect!`);
-      
-      // Clear alert after 6 seconds
-      setTimeout(() => setSystemAlert(null), 6000);
+          setMessages(currMsg => [...currMsg, acceptMsg]);
+          
+          // Highlight with banner alert
+          setSystemAlert(`🎉 Swap Match Granted! ${peer.name} approved your proposal. Go to Chats to connect!`);
+          setTimeout(() => setSystemAlert(null), 6000);
+        } catch (simErr) {
+          console.error('Error executing simulated accept:', simErr);
+        }
+      }, 3500);
 
-    }, 3500);
+    } catch (err: any) {
+      setError(err.message || 'Failed to send match request.');
+    }
   };
 
   // Handler: Send standard message in Messenger
-  const handleSendMessage = (swapId: string, text: string) => {
-    const newMsg: Message = {
-      id: `msg_${Date.now()}`,
-      swapId,
-      senderId: 'user_me',
-      text,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
+  const handleSendMessage = async (swapId: string, text: string) => {
+    if (!userProfile) return;
+    try {
+      const newMsg = await sendMessage({
+        senderId: userProfile.id,
+        receiverId: swapId,
+        text
+      });
 
-    setMessages(prev => [...prev, newMsg]);
+      setMessages(prev => [...prev, newMsg]);
 
-    // Setup smart responder bot based on active contact
-    const recipient = profiles.find(p => p.id === swapId);
-    if (!recipient) return;
+      // Setup smart responder bot based on active contact
+      const recipient = profiles.find(p => p.id === swapId);
+      if (!recipient) return;
 
-    setTimeout(() => {
-      let replyText = "That sounds like an amazing plan! When are you free to schedule a session?";
-      
-      if (recipient.id === 'profile_arpit') {
-        replyText = "Awesome! That Figma auto-layout technique is super powerful once you grasp constraints. Let's do a live Google Meet slot this Friday evening around 6 PM?";
-      } else if (recipient.id === 'profile_chaitanya') {
-        replyText = "Perfect! I'll walk you through setting up Linux network monitoring, and I can explain memory allocation rules in Rust. What IDE do you use?";
-      } else if (recipient.id === 'profile_meera') {
-        replyText = "Super clean! We can streamline your ML data cleaning steps using pandas and vectorization operations. Let's look at your Jupyter notebook soon.";
-      } else if (recipient.id === 'profile_devashish') {
-        replyText = "Solid. Concurrency channels in Golang are awesome for scalable pipelines. Happy to write some test microservices together.";
-      } else if (recipient.id === 'profile_riya') {
-        replyText = "Excellent! Let's map out your Flutter widget hierarchy or Figma mockups. I'm excited for our swap session!";
-      }
+      setTimeout(async () => {
+        try {
+          let replyText = "That sounds like an amazing plan! When are you free to schedule a session?";
+          
+          if (recipient.id === 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d') {
+            replyText = "Awesome! That Figma auto-layout technique is super powerful once you grasp constraints. Let's do a live Google Meet slot this Friday evening around 6 PM?";
+          } else if (recipient.id === 'c3d4e5f6-a7b8-9c0d-1e2f-3a4b5c6d7e8f') {
+            replyText = "Perfect! I'll walk you through setting up Linux network monitoring, and I can explain memory allocation rules in Rust. What IDE do you use?";
+          } else if (recipient.id === 'b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e') {
+            replyText = "Super clean! We can streamline your ML data cleaning steps using pandas and vectorization operations. Let's look at your Jupyter notebook soon.";
+          } else if (recipient.id === 'e5f6a7b8-c9d0-1e2f-3a4b-5c6d7e8f9a0b') {
+            replyText = "Solid. Concurrency channels in Golang are awesome for scalable pipelines. Happy to write some test microservices together.";
+          } else if (recipient.id === 'd4e5f6a7-b8c9-0d1e-2f3a-4b5c6d7e8f9a') {
+            replyText = "Excellent! Let's map out your Flutter widget hierarchy or Figma mockups. I'm excited for our swap session!";
+          }
 
-      const botMsg: Message = {
-        id: `msg_bot_${Date.now()}`,
-        swapId,
-        senderId: recipient.id,
-        text: replyText,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
+          const botMsg = await sendMessage({
+            senderId: recipient.id,
+            receiverId: userProfile.id,
+            text: replyText
+          });
 
-      setMessages(prev => [...prev, botMsg]);
-    }, 2000);
+          setMessages(prev => [...prev, botMsg]);
+        } catch (botErr) {
+          console.error('Error sending bot auto-response:', botErr);
+        }
+      }, 2000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to send message.');
+    }
   };
 
-  // Handler: Join a study team group
-  const handleJoinTeam = (teamId: string) => {
-    setTeams(prev => 
-      prev.map(t => {
-        if (t.id === teamId) {
-          const joined = !t.joined;
-          return {
-            ...t,
-            joined,
-            membersCount: joined ? t.membersCount + 1 : t.membersCount - 1
-          };
-        }
-        return t;
-      })
-    );
+  // Handler: Join/Leave a study team
+  const handleJoinTeam = async (teamId: string) => {
+    if (!userProfile) return;
+    try {
+      const team = teams.find(t => t.id === teamId);
+      if (!team) return;
+
+      if (team.joined) {
+        await leaveTeam(teamId, userProfile.id);
+        setTeams(prev => 
+          prev.map(t => t.id === teamId ? { ...t, joined: false, membersCount: Math.max(0, t.membersCount - 1) } : t)
+        );
+      } else {
+        await joinTeam(teamId, userProfile.id);
+        setTeams(prev => 
+          prev.map(t => t.id === teamId ? { ...t, joined: true, membersCount: t.membersCount + 1 } : t)
+        );
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to join team.');
+    }
   };
 
   // Handler: Create custom study team
-  const handleCreateTeam = (newTeamData: Omit<StudyTeam, 'id' | 'membersCount' | 'joined'>) => {
-    const newTeam: StudyTeam = {
-      ...newTeamData,
-      id: `team_${Date.now()}`,
-      membersCount: 1,
-      joined: true
-    };
-    setTeams(prev => [newTeam, ...prev]);
+  const handleCreateTeam = async (newTeamData: Omit<StudyTeam, 'id' | 'membersCount' | 'joined'>) => {
+    if (!userProfile) return;
+    try {
+      const created = await createTeam(newTeamData, userProfile.id);
+      setTeams(prev => [created, ...prev]);
+    } catch (err: any) {
+      setError(err.message || 'Failed to create team.');
+    }
   };
 
   // Save modified user profile
-  const handleSaveUserProfile = (updated: Profile) => {
-    setUserProfile(updated);
+  const handleSaveUserProfile = async (updated: Profile) => {
+    try {
+      const savedProfile = await upsertProfile(updated);
+      setUserProfile(savedProfile);
+      setProfiles(prev => prev.map(p => p.id === savedProfile.id ? savedProfile : p));
+    } catch (err: any) {
+      setError(err.message || 'Failed to save profile changes.');
+    }
   };
 
-  // Get active chat contacts (who have accepted requests or existing chats)
+  // Get active chat contacts
   const activeChats = profiles.filter(profile => {
-    if (profile.id === 'user_me') return false;
+    if (!userProfile || profile.id === userProfile.id) return false;
     
-    // Check if there is an accepted request with this profile
     const hasAcceptedRequest = matchRequests.some(
-      r => (r.senderId === 'user_me' && r.receiverId === profile.id && r.status === 'accepted') ||
-           (r.senderId === profile.id && r.receiverId === 'user_me' && r.status === 'accepted')
+      r => (r.senderId === userProfile.id && r.receiverId === profile.id && r.status === 'accepted') ||
+           (r.senderId === profile.id && r.receiverId === userProfile.id && r.status === 'accepted')
     );
 
-    // Or check if they have existing default seed messages
     const hasSeedMessages = messages.some(m => m.swapId === profile.id);
 
     return hasAcceptedRequest || hasSeedMessages;
   });
+
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
 
   return (
     <div className="min-h-screen bg-[#f4f4f0] text-black font-sans flex flex-col">
@@ -315,22 +363,29 @@ export default function App() {
           </div>
 
           {/* Quick Profile Widget */}
-          <div className="flex items-center gap-3">
-            <div className="text-right hidden sm:block">
-              <span className="text-xs font-black block font-mono">{userProfile.name}</span>
-              <span className="text-[10px] text-slate-500 font-mono font-medium truncate max-w-[150px] block">{userProfile.college}</span>
+          {userProfile && (
+            <div className="flex items-center gap-3">
+              <div className="text-right hidden sm:block">
+                <span className="text-xs font-black block font-mono">{userProfile.name || 'Your Name'}</span>
+                <span className="text-[10px] text-slate-500 font-mono font-medium truncate max-w-[150px] block">{userProfile.college || 'Student'}</span>
+              </div>
+              <img 
+                src={userProfile.avatar || 'https://images.unsplash.com/photo-1511367461989-f85a21fda167?w=150&auto=format&fit=crop&q=80'} 
+                alt={userProfile.name || 'Your Name'} 
+                onClick={() => setCurrentTab('profile')}
+                className="w-10 h-10 border-2 border-black cursor-pointer bg-[#bef264] hover:scale-105 transition-transform"
+                referrerPolicy="no-referrer"
+              />
             </div>
-            <img 
-              src={userProfile.avatar} 
-              alt={userProfile.name} 
-              onClick={() => setCurrentTab('profile')}
-              className="w-10 h-10 border-2 border-black cursor-pointer bg-[#bef264] hover:scale-105 transition-transform"
-              referrerPolicy="no-referrer"
-            />
-          </div>
+          )}
 
         </div>
       </header>
+
+      {/* Async Error Banner */}
+      {error && (
+        <ErrorBanner message={error} onDismiss={() => setError(null)} />
+      )}
 
       {/* Render Subview Content */}
       <main className="flex-1 flex flex-col bg-[#f4f4f0]">
@@ -341,7 +396,7 @@ export default function App() {
           />
         )}
         
-        {currentTab === 'explore' && (
+        {currentTab === 'explore' && userProfile && (
           <Browse 
             profiles={profiles}
             userProfile={userProfile}
@@ -350,7 +405,7 @@ export default function App() {
           />
         )}
 
-        {currentTab === 'messenger' && (
+        {currentTab === 'messenger' && userProfile && (
           <Messenger 
             activeChats={activeChats}
             messages={messages}
@@ -367,7 +422,7 @@ export default function App() {
           />
         )}
 
-        {currentTab === 'profile' && (
+        {currentTab === 'profile' && userProfile && (
           <ProfileEditor 
             profile={userProfile}
             onSave={handleSaveUserProfile}
@@ -382,7 +437,7 @@ export default function App() {
             © 2026 SkillSwap Delhi Hub • Built for Hackathons & Mutual Peer Swaps.
           </p>
           <div className="flex gap-4">
-            <a href="mailto:amanchouhan1196@gmail.com" className="hover:text-[#bef264] hover:underline">Contact Support</a>
+            <a href="mailto:support@skillswap.app" className="hover:text-[#bef264] hover:underline">Contact Support</a>
             <span>•</span>
             <span className="text-slate-500">Local Time: June 24, 2026</span>
           </div>

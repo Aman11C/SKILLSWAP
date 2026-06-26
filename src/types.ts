@@ -43,3 +43,15 @@ export interface StudyTeam {
   imageColor: string;
   createdBy: string;
 }
+
+export interface Notification {
+  id: string;
+  userId: string;
+  type: string;
+  title: string;
+  body: string;
+  isRead: boolean;
+  relatedId?: string;
+  timestamp: string;
+}
+

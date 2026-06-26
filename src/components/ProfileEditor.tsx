@@ -86,7 +86,7 @@ export default function ProfileEditor({ profile, onSave }: ProfileEditorProps) {
               className="w-24 h-24 border-4 border-black bg-[#bef264] rounded-none mb-3"
               referrerPolicy="no-referrer"
             />
-            <h3 className="text-sm font-black uppercase text-black truncate max-w-full">{name || 'Aman Chouhan'}</h3>
+            <h3 className="text-sm font-black uppercase text-black truncate max-w-full">{name || 'Your Name'}</h3>
             <p className="text-[10px] text-indigo-600 font-bold uppercase truncate max-w-full mt-0.5">{college || 'Student'}</p>
             
             {/* Change Avatar button inputs */}
