@@ -8,8 +8,15 @@ import ProfileEditor from './components/ProfileEditor';
 import LoadingScreen from './components/LoadingScreen';
 import ErrorBanner from './components/ErrorBanner';
 
+// Import fallback data
+import {
+  INITIAL_PROFILES,
+  INITIAL_TEAMS,
+  INITIAL_MESSAGES
+} from './data';
+
 // Import Supabase and services
-import { supabase } from './lib/supabase';
+import { supabase, isSupabaseConfigured } from './lib/supabase';
 import {
   fetchAllProfiles,
   ensureUserProfile,
@@ -42,7 +49,7 @@ export default function App() {
   // Navigation State
   const [currentTab, setCurrentTab] = useState<'landing' | 'explore' | 'messenger' | 'groups' | 'profile'>('landing');
   
-  // Supabase Persistent States
+  // States
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [userProfile, setUserProfile] = useState<Profile | null>(null);
   const [matchRequests, setMatchRequests] = useState<MatchRequest[]>([]);
@@ -53,11 +60,24 @@ export default function App() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Initialize and load all data from Supabase
+  // Initialize and load all data (Supabase or Mock)
   const initApp = async () => {
     try {
       setIsLoading(true);
       setError(null);
+
+      if (!isSupabaseConfigured) {
+        // Fallback to local mock data
+        console.log('Using local mock data (Supabase not configured).');
+        const localUser = INITIAL_PROFILES.find(p => p.id === 'user_me') || INITIAL_PROFILES[0];
+        setUserProfile(localUser);
+        setProfiles(INITIAL_PROFILES);
+        setTeams(INITIAL_TEAMS);
+        setMessages(INITIAL_MESSAGES);
+        setMatchRequests([]);
+        setIsLoading(false);
+        return;
+      }
 
       // 1. Authenticate anonymously
       let userId = '';
@@ -107,6 +127,45 @@ export default function App() {
   // Handler: Request a new match
   const handleRequestMatch = async (receiverId: string, proposedSkill: string, messageText: string) => {
     if (!userProfile) return;
+    
+    // MOCK MODE
+    if (!isSupabaseConfigured) {
+      const newConn: MatchRequest = {
+        id: `req_${Date.now()}`,
+        senderId: userProfile.id,
+        receiverId,
+        status: 'pending',
+        proposedSkill,
+        message: messageText,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+
+      setMatchRequests(prev => [...prev, newConn]);
+
+      const peer = profiles.find(p => p.id === receiverId);
+      if (!peer) return;
+
+      setTimeout(() => {
+        setMatchRequests(current => 
+          current.map(r => r.id === newConn.id ? { ...r, status: 'accepted' } : r)
+        );
+
+        const acceptMsg: Message = {
+          id: `msg_auto_${Date.now()}`,
+          swapId: peer.id,
+          senderId: peer.id,
+          text: `Hey! I accepted your SkillSwap request. I'd love to trade some of my ${peer.teachSkills[0] || 'skills'} knowledge for your ${proposedSkill}. Let's coordinate below!`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+
+        setMessages(currMsg => [...currMsg, acceptMsg]);
+        setSystemAlert(`🎉 Swap Match Granted! ${peer.name} approved your proposal. Go to Chats to connect!`);
+        setTimeout(() => setSystemAlert(null), 6000);
+      }, 3500);
+      return;
+    }
+
+    // SUPABASE MODE
     try {
       const newConn = await createConnection({
         senderId: userProfile.id,
@@ -124,13 +183,11 @@ export default function App() {
 
       setTimeout(async () => {
         try {
-          // Accept request in Supabase
           await updateConnectionStatus(newConn.id, 'accepted');
           setMatchRequests(current => 
             current.map(r => r.id === newConn.id ? { ...r, status: 'accepted' } : r)
           );
 
-          // Add simulated welcoming peer message
           const acceptMsg = await sendMessage({
             senderId: peer.id,
             receiverId: userProfile.id,
@@ -138,8 +195,6 @@ export default function App() {
           });
 
           setMessages(currMsg => [...currMsg, acceptMsg]);
-          
-          // Highlight with banner alert
           setSystemAlert(`🎉 Swap Match Granted! ${peer.name} approved your proposal. Go to Chats to connect!`);
           setTimeout(() => setSystemAlert(null), 6000);
         } catch (simErr) {
@@ -155,6 +210,51 @@ export default function App() {
   // Handler: Send standard message in Messenger
   const handleSendMessage = async (swapId: string, text: string) => {
     if (!userProfile) return;
+
+    // MOCK MODE
+    if (!isSupabaseConfigured) {
+      const newMsg: Message = {
+        id: `msg_${Date.now()}`,
+        swapId,
+        senderId: userProfile.id,
+        text,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+
+      setMessages(prev => [...prev, newMsg]);
+
+      const recipient = profiles.find(p => p.id === swapId);
+      if (!recipient) return;
+
+      setTimeout(() => {
+        let replyText = "That sounds like an amazing plan! When are you free to schedule a session?";
+        
+        if (recipient.id === 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d') {
+          replyText = "Awesome! That Figma auto-layout technique is super powerful once you grasp constraints. Let's do a live Google Meet slot this Friday evening around 6 PM?";
+        } else if (recipient.id === 'c3d4e5f6-a7b8-9c0d-1e2f-3a4b5c6d7e8f') {
+          replyText = "Perfect! I'll walk you through setting up Linux network monitoring, and I can explain memory allocation rules in Rust. What IDE do you use?";
+        } else if (recipient.id === 'b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e') {
+          replyText = "Super clean! We can streamline your ML data cleaning steps using pandas and vectorization operations. Let's look at your Jupyter notebook soon.";
+        } else if (recipient.id === 'e5f6a7b8-c9d0-1e2f-3a4b-5c6d7e8f9a0b') {
+          replyText = "Solid. Concurrency channels in Golang are awesome for scalable pipelines. Happy to write some test microservices together.";
+        } else if (recipient.id === 'd4e5f6a7-b8c9-0d1e-2f3a-4b5c6d7e8f9a') {
+          replyText = "Excellent! Let's map out your Flutter widget hierarchy or Figma mockups. I'm excited for our swap session!";
+        }
+
+        const botMsg: Message = {
+          id: `msg_bot_${Date.now()}`,
+          swapId,
+          senderId: recipient.id,
+          text: replyText,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+
+        setMessages(prev => [...prev, botMsg]);
+      }, 2000);
+      return;
+    }
+
+    // SUPABASE MODE
     try {
       const newMsg = await sendMessage({
         senderId: userProfile.id,
@@ -164,7 +264,6 @@ export default function App() {
 
       setMessages(prev => [...prev, newMsg]);
 
-      // Setup smart responder bot based on active contact
       const recipient = profiles.find(p => p.id === swapId);
       if (!recipient) return;
 
@@ -203,6 +302,26 @@ export default function App() {
   // Handler: Join/Leave a study team
   const handleJoinTeam = async (teamId: string) => {
     if (!userProfile) return;
+
+    // MOCK MODE
+    if (!isSupabaseConfigured) {
+      setTeams(prev => 
+        prev.map(t => {
+          if (t.id === teamId) {
+            const joined = !t.joined;
+            return {
+              ...t,
+              joined,
+              membersCount: joined ? t.membersCount + 1 : Math.max(0, t.membersCount - 1)
+            };
+          }
+          return t;
+        })
+      );
+      return;
+    }
+
+    // SUPABASE MODE
     try {
       const team = teams.find(t => t.id === teamId);
       if (!team) return;
@@ -226,6 +345,20 @@ export default function App() {
   // Handler: Create custom study team
   const handleCreateTeam = async (newTeamData: Omit<StudyTeam, 'id' | 'membersCount' | 'joined'>) => {
     if (!userProfile) return;
+
+    // MOCK MODE
+    if (!isSupabaseConfigured) {
+      const newTeam: StudyTeam = {
+        ...newTeamData,
+        id: `team_${Date.now()}`,
+        membersCount: 1,
+        joined: true
+      };
+      setTeams(prev => [newTeam, ...prev]);
+      return;
+    }
+
+    // SUPABASE MODE
     try {
       const created = await createTeam(newTeamData, userProfile.id);
       setTeams(prev => [created, ...prev]);
@@ -236,6 +369,14 @@ export default function App() {
 
   // Save modified user profile
   const handleSaveUserProfile = async (updated: Profile) => {
+    // MOCK MODE
+    if (!isSupabaseConfigured) {
+      setUserProfile(updated);
+      setProfiles(prev => prev.map(p => p.id === updated.id ? updated : p));
+      return;
+    }
+
+    // SUPABASE MODE
     try {
       const savedProfile = await upsertProfile(updated);
       setUserProfile(savedProfile);
@@ -419,6 +560,7 @@ export default function App() {
             teams={teams}
             onJoinTeam={handleJoinTeam}
             onCreateTeam={handleCreateTeam}
+            userProfile={userProfile}
           />
         )}
 

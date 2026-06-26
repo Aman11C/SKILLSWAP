@@ -103,7 +103,7 @@ export default function Messenger({ activeChats, messages, onSendMessage, userPr
                       </p>
                       {lastMsg && (
                         <p className="text-[10px] text-slate-700 truncate font-sans mt-1">
-                          {lastMsg.senderId === 'user_me' ? 'You: ' : ''}{lastMsg.text}
+                          {lastMsg.senderId === userProfile.id ? 'You: ' : ''}{lastMsg.text}
                         </p>
                       )}
                     </div>
@@ -144,7 +144,7 @@ export default function Messenger({ activeChats, messages, onSendMessage, userPr
                 <div className="flex-1 p-4 overflow-y-auto space-y-3 min-h-[300px] max-h-[400px] bg-slate-50">
                   
                   {chatMessages.map(msg => {
-                    const isMe = msg.senderId === 'user_me';
+                    const isMe = msg.senderId === userProfile.id;
                     return (
                       <div 
                         key={msg.id}

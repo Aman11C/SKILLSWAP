@@ -23,7 +23,7 @@ export default function Browse({ profiles, userProfile, onRequestMatch, activeRe
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
 
   // Exclude current user from the list
-  const otherProfiles = profiles.filter(p => p.id !== 'user_me');
+  const otherProfiles = profiles.filter(p => p.id !== userProfile?.id);
 
   // Dynamic search and tag filtering
   const filteredProfiles = otherProfiles.filter(profile => {

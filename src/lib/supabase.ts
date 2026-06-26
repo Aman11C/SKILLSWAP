@@ -14,6 +14,12 @@ export const supabase = createClient(
   supabaseAnonKey || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder'
 );
 
+export const isSupabaseConfigured = Boolean(
+  supabaseUrl &&
+  supabaseAnonKey &&
+  !supabaseUrl.includes('placeholder-project')
+);
+
 export async function getCurrentUserId(): Promise<string | null> {
   const { data: { session }, error } = await supabase.auth.getSession();
   if (error) {

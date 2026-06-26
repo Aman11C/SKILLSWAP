@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { StudyTeam } from '../types';
+import { useState } from 'react';
+import { Profile, StudyTeam } from '../types';
 import { Users, Plus, Check, ShieldAlert, Sparkles, FolderPlus, Tag, ArrowUpRight } from 'lucide-react';
 import BrutalistCard from './BrutalistCard';
 import BrutalistButton from './BrutalistButton';
@@ -8,9 +8,10 @@ interface GroupsProps {
   teams: StudyTeam[];
   onJoinTeam: (teamId: string) => void;
   onCreateTeam: (team: Omit<StudyTeam, 'id' | 'membersCount' | 'joined'>) => void;
+  userProfile: Profile | null;
 }
 
-export default function Groups({ teams, onJoinTeam, onCreateTeam }: GroupsProps) {
+export default function Groups({ teams, onJoinTeam, onCreateTeam, userProfile }: GroupsProps) {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [teamName, setTeamName] = useState('');
   const [teamDesc, setTeamDesc] = useState('');
@@ -44,7 +45,7 @@ export default function Groups({ teams, onJoinTeam, onCreateTeam }: GroupsProps)
       skillsRequired: skillsArray.length > 0 ? skillsArray : ['General'],
       maxMembers: Number(maxMembers),
       imageColor: randomColor,
-      createdBy: 'Aman Chouhan'
+      createdBy: userProfile?.name || 'Aman Chouhan'
     });
 
     setTeamName('');
