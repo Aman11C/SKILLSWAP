@@ -45,6 +45,22 @@ import {
   Sparkles
 } from 'lucide-react';
 
+const LOCAL_PROFILE_KEY = 'skillswap:userProfile';
+const LOCAL_TEAMS_KEY = 'skillswap:teams';
+
+function readLocalData<T>(key: string, fallback: T): T {
+  try {
+    const value = localStorage.getItem(key);
+    return value ? JSON.parse(value) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeLocalData<T>(key: string, value: T) {
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
 export default function App() {
   // Navigation State
   const [currentTab, setCurrentTab] = useState<'landing' | 'explore' | 'messenger' | 'groups' | 'profile'>('landing');
@@ -72,10 +88,14 @@ export default function App() {
         if (import.meta.env.PROD) {
           setError('Supabase is not configured on Vercel. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, then redeploy.');
         }
-        const localUser = INITIAL_PROFILES.find(p => p.id === 'user_me') || INITIAL_PROFILES[0];
+        const localUser = readLocalData(
+          LOCAL_PROFILE_KEY,
+          INITIAL_PROFILES.find(p => p.id === 'user_me') || INITIAL_PROFILES[0]
+        );
+        const localTeams = readLocalData(LOCAL_TEAMS_KEY, INITIAL_TEAMS);
         setUserProfile(localUser);
-        setProfiles(INITIAL_PROFILES);
-        setTeams(INITIAL_TEAMS);
+        setProfiles([localUser, ...INITIAL_PROFILES.filter(p => p.id !== localUser.id)]);
+        setTeams(localTeams);
         setMessages(INITIAL_MESSAGES);
         setMatchRequests([]);
         setIsLoading(false);
@@ -314,8 +334,8 @@ export default function App() {
 
     // MOCK MODE
     if (!isSupabaseConfigured) {
-      setTeams(prev => 
-        prev.map(t => {
+      setTeams(prev => {
+        const updatedTeams = prev.map(t => {
           if (t.id === teamId) {
             const joined = !t.joined;
             return {
@@ -325,8 +345,10 @@ export default function App() {
             };
           }
           return t;
-        })
-      );
+        });
+        writeLocalData(LOCAL_TEAMS_KEY, updatedTeams);
+        return updatedTeams;
+      });
       return;
     }
 
@@ -363,7 +385,11 @@ export default function App() {
         membersCount: 1,
         joined: true
       };
-      setTeams(prev => [newTeam, ...prev]);
+      setTeams(prev => {
+        const updatedTeams = [newTeam, ...prev];
+        writeLocalData(LOCAL_TEAMS_KEY, updatedTeams);
+        return updatedTeams;
+      });
       return;
     }
 
@@ -382,6 +408,7 @@ export default function App() {
     // MOCK MODE
     if (!isSupabaseConfigured) {
       setUserProfile(updated);
+      writeLocalData(LOCAL_PROFILE_KEY, updated);
       setProfiles(prev => prev.map(p => p.id === updated.id ? updated : p));
       return;
     }

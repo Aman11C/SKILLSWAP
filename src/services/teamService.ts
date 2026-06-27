@@ -39,11 +39,17 @@ export async function fetchAllTeams(userId: string): Promise<StudyTeam[]> {
     counts[item.team_id] = (counts[item.team_id] || 0) + 1;
     return counts;
   }, {});
+  const creatorIds = [...new Set((teamsData || []).map(team => team.created_by).filter(Boolean))];
+  const { data: creatorsData } = creatorIds.length
+    ? await supabase.from('profiles').select('id, name').in('id', creatorIds)
+    : { data: [] };
+  const creatorNames = new Map((creatorsData || []).map(profile => [profile.id, profile.name]));
 
   return (teamsData || []).map(team => mapTeamFromDB(
     {
       ...team,
-      members_count: memberCounts[team.id] || team.members_count || 0
+      members_count: memberCounts[team.id] || team.members_count || 0,
+      created_by: creatorNames.get(team.created_by) || team.created_by
     },
     joinedTeamIds.has(team.id)
   ));
@@ -79,7 +85,10 @@ export async function createTeam(
 
   if (memberError) throw memberError;
 
-  return mapTeamFromDB(insertedTeam, true);
+  return {
+    ...mapTeamFromDB(insertedTeam, true),
+    createdBy: teamData.createdBy
+  };
 }
 
 export async function joinTeam(teamId: string, userId: string): Promise<void> {
