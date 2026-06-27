@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Profile, StudyTeam } from '../types';
 import { Users, Plus, Check, ShieldAlert, Sparkles, FolderPlus, Tag, ArrowUpRight } from 'lucide-react';
 import BrutalistCard from './BrutalistCard';
@@ -7,7 +7,7 @@ import BrutalistButton from './BrutalistButton';
 interface GroupsProps {
   teams: StudyTeam[];
   onJoinTeam: (teamId: string) => void;
-  onCreateTeam: (team: Omit<StudyTeam, 'id' | 'membersCount' | 'joined'>) => void;
+  onCreateTeam: (team: Omit<StudyTeam, 'id' | 'membersCount' | 'joined'>) => void | Promise<void>;
   userProfile: Profile | null;
 }
 
@@ -19,10 +19,11 @@ export default function Groups({ teams, onJoinTeam, onCreateTeam, userProfile }:
   const [skillsRequired, setSkillsRequired] = useState('');
   const [maxMembers, setMaxMembers] = useState(4);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!teamName || !teamDesc) return;
+    if (!teamName || !teamDesc || isCreating) return;
 
     // Split skills by comma
     const skillsArray = skillsRequired
@@ -38,25 +39,33 @@ export default function Groups({ teams, onJoinTeam, onCreateTeam, userProfile }:
     ];
     const randomColor = colors[Math.floor(Math.random() * colors.length)];
 
-    onCreateTeam({
-      name: teamName,
-      description: teamDesc,
-      category,
-      skillsRequired: skillsArray.length > 0 ? skillsArray : ['General'],
-      maxMembers: Number(maxMembers),
-      imageColor: randomColor,
-      createdBy: userProfile?.name || 'Aman Chouhan'
-    });
+    setIsCreating(true);
 
-    setTeamName('');
-    setTeamDesc('');
-    setSkillsRequired('');
-    setIsCreateOpen(false);
-    
-    setSuccessMsg(`Created team: "${teamName}" successfully!`);
-    setTimeout(() => {
+    try {
+      await onCreateTeam({
+        name: teamName,
+        description: teamDesc,
+        category,
+        skillsRequired: skillsArray.length > 0 ? skillsArray : ['General'],
+        maxMembers: Number(maxMembers),
+        imageColor: randomColor,
+        createdBy: userProfile?.name || 'Aman Chouhan'
+      });
+
+      setTeamName('');
+      setTeamDesc('');
+      setSkillsRequired('');
+      setIsCreateOpen(false);
+
+      setSuccessMsg(`Created team: "${teamName}" successfully!`);
+      setTimeout(() => {
+        setSuccessMsg(null);
+      }, 4000);
+    } catch {
       setSuccessMsg(null);
-    }, 4000);
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   return (
@@ -251,8 +260,9 @@ export default function Groups({ teams, onJoinTeam, onCreateTeam, userProfile }:
                   variant="yellow"
                   className="flex-1"
                   type="submit"
+                  disabled={isCreating}
                 >
-                  Launch Squad 🚀
+                  {isCreating ? 'Launching...' : 'Launch Squad 🚀'}
                 </BrutalistButton>
               </div>
 

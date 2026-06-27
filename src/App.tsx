@@ -69,6 +69,9 @@ export default function App() {
       if (!isSupabaseConfigured) {
         // Fallback to local mock data
         console.log('Using local mock data (Supabase not configured).');
+        if (import.meta.env.PROD) {
+          setError('Supabase is not configured on Vercel. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, then redeploy.');
+        }
         const localUser = INITIAL_PROFILES.find(p => p.id === 'user_me') || INITIAL_PROFILES[0];
         setUserProfile(localUser);
         setProfiles(INITIAL_PROFILES);
@@ -88,7 +91,9 @@ export default function App() {
         userId = session.user.id;
       } else {
         const { data: authData, error: authError } = await supabase.auth.signInAnonymously();
-        if (authError) throw authError;
+        if (authError) {
+          throw new Error(`${authError.message}. Enable Anonymous sign-ins in Supabase Authentication settings.`);
+        }
         userId = authData.user?.id || '';
       }
 
@@ -188,11 +193,13 @@ export default function App() {
             current.map(r => r.id === newConn.id ? { ...r, status: 'accepted' } : r)
           );
 
-          const acceptMsg = await sendMessage({
+          const acceptMsg: Message = {
+            id: `msg_auto_${crypto.randomUUID()}`,
+            swapId: peer.id,
             senderId: peer.id,
-            receiverId: userProfile.id,
-            text: `Hey! I accepted your SkillSwap request. I'd love to trade some of my ${peer.teachSkills[0] || 'skills'} knowledge for your ${proposedSkill}. Let's coordinate below!`
-          });
+            text: `Hey! I accepted your SkillSwap request. I'd love to trade some of my ${peer.teachSkills[0] || 'skills'} knowledge for your ${proposedSkill}. Let's coordinate below!`,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          };
 
           setMessages(currMsg => [...currMsg, acceptMsg]);
           setSystemAlert(`🎉 Swap Match Granted! ${peer.name} approved your proposal. Go to Chats to connect!`);
@@ -283,11 +290,13 @@ export default function App() {
             replyText = "Excellent! Let's map out your Flutter widget hierarchy or Figma mockups. I'm excited for our swap session!";
           }
 
-          const botMsg = await sendMessage({
+          const botMsg: Message = {
+            id: `msg_bot_${crypto.randomUUID()}`,
+            swapId: recipient.id,
             senderId: recipient.id,
-            receiverId: userProfile.id,
-            text: replyText
-          });
+            text: replyText,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          };
 
           setMessages(prev => [...prev, botMsg]);
         } catch (botErr) {
@@ -364,6 +373,7 @@ export default function App() {
       setTeams(prev => [created, ...prev]);
     } catch (err: any) {
       setError(err.message || 'Failed to create team.');
+      throw err;
     }
   };
 
@@ -383,6 +393,7 @@ export default function App() {
       setProfiles(prev => prev.map(p => p.id === savedProfile.id ? savedProfile : p));
     } catch (err: any) {
       setError(err.message || 'Failed to save profile changes.');
+      throw err;
     }
   };
 

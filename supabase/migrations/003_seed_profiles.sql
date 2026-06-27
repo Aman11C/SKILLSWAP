@@ -1,17 +1,7 @@
 -- 003_seed_profiles.sql
 -- Seed demo profiles and teams into the database
 
--- 1. Insert placeholder auth users so foreign key references work
-INSERT INTO auth.users (id, email, aud, role)
-VALUES
-  ('a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d', 'arpit@skillswap.app', 'authenticated', 'authenticated'),
-  ('b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e', 'meera@skillswap.app', 'authenticated', 'authenticated'),
-  ('c3d4e5f6-a7b8-9c0d-1e2f-3a4b5c6d7e8f', 'chaitanya@skillswap.app', 'authenticated', 'authenticated'),
-  ('d4e5f6a7-b8c9-0d1e-2f3a-4b5c6d7e8f9a', 'riya@skillswap.app', 'authenticated', 'authenticated'),
-  ('e5f6a7b8-c9d0-1e2f-3a4b-5c6d7e8f9a0b', 'devashish@skillswap.app', 'authenticated', 'authenticated')
-ON CONFLICT (id) DO NOTHING;
-
--- 2. Insert profiles
+-- 1. Insert demo public profiles
 INSERT INTO public.profiles (id, name, avatar, bio, college, teach_skills, learn_skills, rating, matches_count, location, contact_url)
 VALUES
   (
@@ -81,7 +71,7 @@ VALUES
   )
 ON CONFLICT (id) DO NOTHING;
 
--- 3. Insert teams
+-- 2. Insert teams
 INSERT INTO public.teams (id, name, description, category, skills_required, members_count, max_members, image_color, created_by)
 VALUES
   (
@@ -119,7 +109,7 @@ VALUES
   )
 ON CONFLICT (id) DO NOTHING;
 
--- 4. Seed members for teams (including team creators)
+-- 3. Seed members for teams (including team creators)
 INSERT INTO public.team_members (team_id, user_id)
 VALUES
   ('f1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d', 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d'),

@@ -26,14 +26,27 @@ export async function fetchAllTeams(userId: string): Promise<StudyTeam[]> {
 
   const { data: joinedData, error: joinedError } = await supabase
     .from('team_members')
-    .select('team_id')
-    .eq('user_id', userId);
+    .select('team_id, user_id');
 
   if (joinedError) throw joinedError;
 
-  const joinedTeamIds = new Set((joinedData || []).map(item => item.team_id));
+  const joinedTeamIds = new Set(
+    (joinedData || [])
+      .filter(item => item.user_id === userId)
+      .map(item => item.team_id)
+  );
+  const memberCounts = (joinedData || []).reduce<Record<string, number>>((counts, item) => {
+    counts[item.team_id] = (counts[item.team_id] || 0) + 1;
+    return counts;
+  }, {});
 
-  return (teamsData || []).map(team => mapTeamFromDB(team, joinedTeamIds.has(team.id)));
+  return (teamsData || []).map(team => mapTeamFromDB(
+    {
+      ...team,
+      members_count: memberCounts[team.id] || team.members_count || 0
+    },
+    joinedTeamIds.has(team.id)
+  ));
 }
 
 export async function createTeam(
@@ -75,19 +88,6 @@ export async function joinTeam(teamId: string, userId: string): Promise<void> {
     .insert({ team_id: teamId, user_id: userId });
 
   if (joinError) throw joinError;
-
-  const { data: team } = await supabase
-    .from('teams')
-    .select('members_count')
-    .eq('id', teamId)
-    .maybeSingle();
-
-  if (team) {
-    await supabase
-      .from('teams')
-      .update({ members_count: (team.members_count || 0) + 1 })
-      .eq('id', teamId);
-  }
 }
 
 export async function leaveTeam(teamId: string, userId: string): Promise<void> {
@@ -98,17 +98,4 @@ export async function leaveTeam(teamId: string, userId: string): Promise<void> {
     .eq('user_id', userId);
 
   if (leaveError) throw leaveError;
-
-  const { data: team } = await supabase
-    .from('teams')
-    .select('members_count')
-    .eq('id', teamId)
-    .maybeSingle();
-
-  if (team) {
-    await supabase
-      .from('teams')
-      .update({ members_count: Math.max(0, (team.members_count || 1) - 1) })
-      .eq('id', teamId);
-  }
 }

@@ -1,9 +1,10 @@
 -- 001_create_tables.sql
 -- Create database schema for SkillSwap
 
--- Create profiles table (links to Supabase auth.users)
+-- Create profiles table. Real users use their auth.uid(); seeded demo profiles
+-- are plain public profiles and do not need matching auth.users rows.
 CREATE TABLE IF NOT EXISTS public.profiles (
-    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY,
     name TEXT NOT NULL DEFAULT '',
     avatar TEXT NOT NULL DEFAULT '',
     bio TEXT NOT NULL DEFAULT '',

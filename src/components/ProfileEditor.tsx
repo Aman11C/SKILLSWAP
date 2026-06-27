@@ -7,7 +7,7 @@ import BrutalistButton from './BrutalistButton';
 
 interface ProfileEditorProps {
   profile: Profile;
-  onSave: (updated: Profile) => void;
+  onSave: (updated: Profile) => void | Promise<void>;
 }
 
 export default function ProfileEditor({ profile, onSave }: ProfileEditorProps) {
@@ -20,6 +20,7 @@ export default function ProfileEditor({ profile, onSave }: ProfileEditorProps) {
   const [teachSkills, setTeachSkills] = useState<string[]>(profile.teachSkills);
   const [learnSkills, setLearnSkills] = useState<string[]>(profile.learnSkills);
   const [success, setSuccess] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const toggleTeachSkill = (skill: string) => {
     if (teachSkills.includes(skill)) {
@@ -37,24 +38,32 @@ export default function ProfileEditor({ profile, onSave }: ProfileEditorProps) {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSave({
-      ...profile,
-      name,
-      college,
-      bio,
-      location,
-      contactUrl,
-      avatar,
-      teachSkills,
-      learnSkills
-    });
+    setIsSaving(true);
 
-    setSuccess(true);
-    setTimeout(() => {
+    try {
+      await onSave({
+        ...profile,
+        name,
+        college,
+        bio,
+        location,
+        contactUrl,
+        avatar,
+        teachSkills,
+        learnSkills
+      });
+
+      setSuccess(true);
+      setTimeout(() => {
+        setSuccess(false);
+      }, 3000);
+    } catch {
       setSuccess(false);
-    }, 3000);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -240,8 +249,9 @@ export default function ProfileEditor({ profile, onSave }: ProfileEditorProps) {
                 variant="yellow"
                 className="w-full py-3"
                 type="submit"
+                disabled={isSaving}
               >
-                Save My Changes & Re-Sync Matches
+                {isSaving ? 'Saving...' : 'Save My Changes & Re-Sync Matches'}
               </BrutalistButton>
             </div>
 
