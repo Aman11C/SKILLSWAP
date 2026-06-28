@@ -33,7 +33,9 @@ export function LoadingSpinner({ text = 'Loading...' }: { text?: string }) {
   );
 }
 
-export function EmptyState({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) {
+import type { ReactNode } from 'react';
+
+export function EmptyState({ icon, title, description }: { icon: ReactNode; title: string; description: string }) {
   return (
     <div className="border-4 border-black bg-white p-12 text-center font-mono space-y-2">
       <div className="flex justify-center text-slate-300">{icon}</div>

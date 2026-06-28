@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase';
+import { supabase } from '../supabase/client';
 import { MatchRequest, Message } from '../types';
 
 export function mapConnectionFromDB(dbConn: any): MatchRequest {

@@ -1,7 +1,8 @@
 import { Navigate } from '../utils/navigate';
 import { useAuth } from '../context/AuthContext';
+import type { ReactNode } from 'react';
 
-export function ProtectedRoute({ children }: { children: React.ReactNode }) {
+export function ProtectedRoute({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
 
   if (loading) {

@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase';
+import { supabase } from '../supabase/client';
 import { StudyTeam } from '../types';
 
 export function mapTeamFromDB(dbTeam: any, isJoined: boolean): StudyTeam {

@@ -44,6 +44,12 @@ export interface StudyTeam {
   createdBy: string;
 }
 
+export interface User {
+  id: string;
+  email: string;
+  created_at: string;
+}
+
 export interface Notification {
   id: string;
   userId: string;

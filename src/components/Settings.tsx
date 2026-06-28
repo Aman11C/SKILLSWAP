@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { resetPasswordSchema } from '../lib/schemas';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../supabase/client';
 import BrutalistCard from './BrutalistCard';
 import BrutalistButton from './BrutalistButton';
 import toast from 'react-hot-toast';

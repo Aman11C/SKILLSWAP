@@ -6,6 +6,7 @@ interface BrutalistCardProps extends React.HTMLAttributes<HTMLDivElement> {
   className?: string;
   shadowSize?: 'sm' | 'md' | 'lg';
   onClick?: () => void;
+  key?: React.Key;
 }
 
 export default function BrutalistCard({

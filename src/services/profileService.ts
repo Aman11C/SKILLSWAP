@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase';
+import { supabase } from '../supabase/client';
 import { Profile } from '../types';
 
 export function mapProfileFromDB(dbProfile: any): Profile {
@@ -67,7 +67,10 @@ export async function upsertProfile(profile: Profile): Promise<Profile> {
   return mapProfileFromDB(data);
 }
 
-export async function ensureUserProfile(userId: string): Promise<Profile> {
+export async function ensureUserProfile(
+  userId: string,
+  profileData?: { name?: string; college?: string; avatar?: string }
+): Promise<Profile> {
   const { data, error } = await supabase
     .from('profiles')
     .select('*')
@@ -79,10 +82,10 @@ export async function ensureUserProfile(userId: string): Promise<Profile> {
   if (!data) {
     const defaultProfile = {
       id: userId,
-      name: '',
-      avatar: 'https://images.unsplash.com/photo-1511367461989-f85a21fda167?w=150&auto=format&fit=crop&q=80',
+      name: profileData?.name || '',
+      avatar: profileData?.avatar || 'https://images.unsplash.com/photo-1511367461989-f85a21fda167?w=150&auto=format&fit=crop&q=80',
       bio: '',
-      college: '',
+      college: profileData?.college || '',
       teach_skills: [],
       learn_skills: [],
       rating: 0,

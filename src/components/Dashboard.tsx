@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Profile } from '../types';
 import { postSchema } from '../lib/schemas';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../supabase/client';
 import { fetchPosts, createPost, deletePost, Post } from '../services/postService';
 import BrutalistCard from './BrutalistCard';
 import BrutalistButton from './BrutalistButton';
