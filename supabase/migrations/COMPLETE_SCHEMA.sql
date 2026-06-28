@@ -1,6 +1,6 @@
 -- SkillSwap Complete Database Schema
--- Copy and paste this entire file into Supabase SQL Editor (https://supabase.com/dashboard/project/_/sql)
--- Run all statements to create tables, enable RLS, seed data, and add policies
+-- Run this entire file in Supabase SQL Editor: https://supabase.com/dashboard/project/_/sql
+-- Or use: npx tsx setup-database.ts (with .env configured)
 
 -- ============================================================
 -- 001_create_tables.sql
@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS public.connections (
     status TEXT NOT NULL CHECK (status IN ('pending', 'accepted', 'declined')),
     proposed_skill TEXT NOT NULL,
     message TEXT NOT NULL DEFAULT '',
+    target_skill TEXT,  -- Added in 005
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
@@ -82,72 +83,67 @@ CREATE TABLE IF NOT EXISTS public.notifications (
 -- PROFILES
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow public select on profiles" ON public.profiles
+CREATE POLICY IF NOT EXISTS "Allow public select on profiles" ON public.profiles
     FOR SELECT USING (true);
 
-CREATE POLICY "Allow users to insert own profile" ON public.profiles
+CREATE POLICY IF NOT EXISTS "Allow users to insert own profile" ON public.profiles
     FOR INSERT WITH CHECK (auth.uid() = id);
 
-CREATE POLICY "Allow users to update own profile" ON public.profiles
+CREATE POLICY IF NOT EXISTS "Allow users to update own profile" ON public.profiles
     FOR UPDATE USING (auth.uid() = id);
-
 
 -- TEAMS
 ALTER TABLE public.teams ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow public select on teams" ON public.teams
+CREATE POLICY IF NOT EXISTS "Allow public select on teams" ON public.teams
     FOR SELECT USING (true);
 
-CREATE POLICY "Allow auth users to insert teams" ON public.teams
+CREATE POLICY IF NOT EXISTS "Allow auth users to insert teams" ON public.teams
     FOR INSERT WITH CHECK (auth.uid() = created_by);
 
-CREATE POLICY "Allow creator to update teams" ON public.teams
+CREATE POLICY IF NOT EXISTS "Allow creator to update teams" ON public.teams
     FOR UPDATE USING (auth.uid() = created_by);
-
 
 -- TEAM_MEMBERS
 ALTER TABLE public.team_members ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow public select on team_members" ON public.team_members
+CREATE POLICY IF NOT EXISTS "Allow public select on team_members" ON public.team_members
     FOR SELECT USING (true);
 
-CREATE POLICY "Allow users to join teams" ON public.team_members
+CREATE POLICY IF NOT EXISTS "Allow users to join teams" ON public.team_members
     FOR INSERT WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Allow users to leave teams" ON public.team_members
+CREATE POLICY IF NOT EXISTS "Allow users to leave teams" ON public.team_members
     FOR DELETE USING (auth.uid() = user_id);
-
 
 -- CONNECTIONS
 ALTER TABLE public.connections ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow users to view own connections" ON public.connections
+CREATE POLICY IF NOT EXISTS "Allow users to view own connections" ON public.connections
     FOR SELECT USING (auth.uid() = sender_id OR auth.uid() = receiver_id);
 
-CREATE POLICY "Allow users to initiate connections" ON public.connections
+CREATE POLICY IF NOT EXISTS "Allow users to initiate connections" ON public.connections
     FOR INSERT WITH CHECK (auth.uid() = sender_id);
 
-CREATE POLICY "Allow users to update own connections" ON public.connections
+CREATE POLICY IF NOT EXISTS "Allow users to update own connections" ON public.connections
     FOR UPDATE USING (auth.uid() = sender_id OR auth.uid() = receiver_id);
-
 
 -- MESSAGES
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow users to view own messages" ON public.messages
+CREATE POLICY IF NOT EXISTS "Allow users to view own messages" ON public.messages
     FOR SELECT USING (auth.uid() = sender_id OR auth.uid() = receiver_id);
 
-CREATE POLICY "Allow users to send messages" ON public.messages
+CREATE POLICY IF NOT EXISTS "Allow users to send messages" ON public.messages
     FOR INSERT WITH CHECK (auth.uid() = sender_id);
-
 
 -- NOTIFICATIONS
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow users to view own notifications" ON public.notifications
+CREATE POLICY IF NOT EXISTS "Allow users to view own notifications" ON public.notifications
     FOR SELECT USING (auth.uid() = user_id);
 
-CREATE POLICY "Allow users to update own notifications" ON public.notifications
+CREATE POLICY IF NOT EXISTS "Allow users to update own notifications" ON public.notifications
     FOR UPDATE USING (auth.uid() = user_id);
 
 -- ============================================================
@@ -291,6 +287,8 @@ END $$;
 -- ============================================================
 -- 005_additional_tables.sql
 -- ============================================================
+-- Create additional tables for SkillSwap: skills, posts, and reviews
+
 -- 1. Create skills table
 CREATE TABLE IF NOT EXISTS public.skills (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -336,27 +334,27 @@ ALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reviews ENABLE ROW LEVEL SECURITY;
 
 -- 5. Policies for skills
-CREATE POLICY "Allow public read on skills" ON public.skills
+CREATE POLICY IF NOT EXISTS "Allow public read on skills" ON public.skills
     FOR SELECT USING (true);
 
-CREATE POLICY "Allow auth users to insert skills" ON public.skills
+CREATE POLICY IF NOT EXISTS "Allow auth users to insert skills" ON public.skills
     FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 
 -- 6. Policies for posts
-CREATE POLICY "Allow public read on posts" ON public.posts
+CREATE POLICY IF NOT EXISTS "Allow public read on posts" ON public.posts
     FOR SELECT USING (true);
 
-CREATE POLICY "Allow auth users to insert own posts" ON public.posts
+CREATE POLICY IF NOT EXISTS "Allow auth users to insert own posts" ON public.posts
     FOR INSERT WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Allow users to delete own posts" ON public.posts
+CREATE POLICY IF NOT EXISTS "Allow users to delete own posts" ON public.posts
     FOR DELETE USING (auth.uid() = user_id);
 
 -- 7. Policies for reviews
-CREATE POLICY "Allow public read on reviews" ON public.reviews
+CREATE POLICY IF NOT EXISTS "Allow public read on reviews" ON public.reviews
     FOR SELECT USING (true);
 
-CREATE POLICY "Allow auth users to write reviews" ON public.reviews
+CREATE POLICY IF NOT EXISTS "Allow auth users to write reviews" ON public.reviews
     FOR INSERT WITH CHECK (auth.uid() = reviewer_id);
 
 -- 8. Update connections policies to include target_skill (no change needed, just ensure they work)
@@ -378,3 +376,9 @@ INSERT INTO public.skills (name, category) VALUES
     ('Solidity', 'Blockchain'),
     ('Product Management', 'Management')
 ON CONFLICT (name) DO NOTHING;
+
+-- ============================================================
+-- VERIFICATION QUERIES (run after to verify)
+-- ============================================================
+-- SELECT * FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename;
+-- SELECT schemaname, tablename, policyname FROM pg_policies WHERE schemaname = 'public' ORDER BY tablename, policyname;
