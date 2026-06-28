@@ -8,6 +8,7 @@ export function mapConnectionFromDB(dbConn: any): MatchRequest {
     receiverId: dbConn.receiver_id,
     status: dbConn.status as 'pending' | 'accepted' | 'declined',
     proposedSkill: dbConn.proposed_skill,
+    targetSkill: dbConn.target_skill,
     message: dbConn.message || '',
     timestamp: new Date(dbConn.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   };
@@ -39,6 +40,7 @@ export async function createConnection(conn: {
   receiverId: string;
   status: 'pending' | 'accepted' | 'declined';
   proposedSkill: string;
+  targetSkill: string;
   message: string;
 }): Promise<MatchRequest> {
   const { data, error } = await supabase
@@ -48,6 +50,7 @@ export async function createConnection(conn: {
       receiver_id: conn.receiverId,
       status: conn.status,
       proposed_skill: conn.proposedSkill,
+      target_skill: conn.targetSkill,
       message: conn.message
     })
     .select('*')

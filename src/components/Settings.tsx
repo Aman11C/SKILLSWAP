@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { resetPasswordSchema } from '../lib/schemas';
-import { supabase, isSupabaseConfigured } from '../supabase/client';
+import { supabase } from '../supabase/client';
 import BrutalistCard from './BrutalistCard';
 import BrutalistButton from './BrutalistButton';
 import toast from 'react-hot-toast';
@@ -30,11 +30,6 @@ export default function Settings({ onSignOut }: SettingsProps) {
   const onChangePassword = async (data: any) => {
     setLoading(true);
     try {
-      if (!isSupabaseConfigured) {
-        toast.success('Mock password changed.');
-        reset();
-        return;
-      }
       const { error } = await supabase.auth.updateUser({
         password: data.password,
       });
@@ -50,9 +45,7 @@ export default function Settings({ onSignOut }: SettingsProps) {
 
   const handleSignOutClick = async () => {
     try {
-      if (isSupabaseConfigured) {
-        await supabase.auth.signOut();
-      }
+      await supabase.auth.signOut();
       toast.success('Signed out successfully.');
       onSignOut();
     } catch (err: any) {

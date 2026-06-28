@@ -11,15 +11,8 @@ import AuthPages from './components/auth/AuthPages';
 import Dashboard from './components/Dashboard';
 import Settings from './components/Settings';
 
-// Import fallback data
-import {
-  INITIAL_PROFILES,
-  INITIAL_TEAMS,
-  INITIAL_MESSAGES
-} from './data';
-
 // Import Supabase and services
-import { supabase, isSupabaseConfigured } from './supabase/client';
+import { supabase } from './supabase/client';
 import {
   fetchAllProfiles,
   ensureUserProfile,
@@ -39,43 +32,25 @@ import {
   sendMessage
 } from './services/messageService';
 
-import { 
-  Compass, 
-  MessageSquare, 
-  Users, 
-  User, 
+import {
+  Compass,
+  MessageSquare,
+  Users,
+  User,
   LayoutDashboard,
   Settings as SettingsIcon,
-  Sparkles,
-  LogOut
+  Sparkles
 } from 'lucide-react';
-
-const LOCAL_PROFILE_KEY = 'skillswap:userProfile';
-const LOCAL_TEAMS_KEY = 'skillswap:teams';
-
-function readLocalData<T>(key: string, fallback: T): T {
-  try {
-    const value = localStorage.getItem(key);
-    return value ? JSON.parse(value) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeLocalData<T>(key: string, value: T) {
-  localStorage.setItem(key, JSON.stringify(value));
-}
 
 export default function App() {
   // Session State
   const [session, setSession] = useState<any>(null);
-  const [isMockBypassed, setIsMockBypassed] = useState<boolean>(false);
 
   // Navigation State
   const [currentTab, setCurrentTab] = useState<
     'landing' | 'auth' | 'dashboard' | 'explore' | 'messenger' | 'groups' | 'profile' | 'settings'
   >('landing');
-  
+
   // Data States
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [userProfile, setUserProfile] = useState<Profile | null>(null);
@@ -87,7 +62,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Initialize and load all data (Supabase Mode)
+  // Initialize and load all data from Supabase
   const initSupabaseData = async (userId: string) => {
     try {
       setIsLoading(true);
@@ -118,30 +93,8 @@ export default function App() {
     }
   };
 
-  // Initialize mock fallback data
-  const initMockData = () => {
-    console.log('Using local mock data (Supabase not configured or bypassed).');
-    const localUser = readLocalData(
-      LOCAL_PROFILE_KEY,
-      INITIAL_PROFILES.find(p => p.id === 'user_me') || INITIAL_PROFILES[0]
-    );
-    const localTeams = readLocalData(LOCAL_TEAMS_KEY, INITIAL_TEAMS);
-    setUserProfile(localUser);
-    setProfiles([localUser, ...INITIAL_PROFILES.filter(p => p.id !== localUser.id)]);
-    setTeams(localTeams);
-    setMessages(INITIAL_MESSAGES);
-    setMatchRequests([]);
-    setCurrentTab('dashboard');
-    setIsLoading(false);
-  };
-
-  // Listen to Supabase Session validation checks
+  // Listen to Supabase Session
   useEffect(() => {
-    if (!isSupabaseConfigured) {
-      setIsLoading(false);
-      return;
-    }
-
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session) {
@@ -168,7 +121,7 @@ export default function App() {
 
   // Realtime subscription for messages
   useEffect(() => {
-    if (!userProfile || !isSupabaseConfigured) return;
+    if (!userProfile) return;
 
     const messageChannel = supabase
       .channel('realtime-messages')
@@ -191,19 +144,11 @@ export default function App() {
     };
   }, [userProfile]);
 
-  const handleBypassMock = () => {
-    setIsMockBypassed(true);
-    initMockData();
-  };
-
   const handleSignOut = async () => {
     setIsLoading(true);
     try {
-      if (isSupabaseConfigured) {
-        await supabase.auth.signOut();
-      }
+      await supabase.auth.signOut();
       setSession(null);
-      setIsMockBypassed(false);
       setUserProfile(null);
       setCurrentTab('landing');
     } catch (err: any) {
@@ -216,51 +161,14 @@ export default function App() {
   // Handler: Request a new match
   const handleRequestMatch = async (receiverId: string, proposedSkill: string, messageText: string) => {
     if (!userProfile) return;
-    
-    // MOCK MODE
-    if (!isSupabaseConfigured || isMockBypassed) {
-      const newConn: MatchRequest = {
-        id: `req_${Date.now()}`,
-        senderId: userProfile.id,
-        receiverId,
-        status: 'pending',
-        proposedSkill,
-        message: messageText,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
 
-      setMatchRequests(prev => [...prev, newConn]);
-
-      const peer = profiles.find(p => p.id === receiverId);
-      if (!peer) return;
-
-      setTimeout(() => {
-        setMatchRequests(current => 
-          current.map(r => r.id === newConn.id ? { ...r, status: 'accepted' } : r)
-        );
-
-        const acceptMsg: Message = {
-          id: `msg_auto_${Date.now()}`,
-          swapId: peer.id,
-          senderId: peer.id,
-          text: `Hey! I accepted your SkillSwap request. I'd love to trade some of my ${peer.teachSkills[0] || 'skills'} knowledge for your ${proposedSkill}. Let's coordinate below!`,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        };
-
-        setMessages(currMsg => [...currMsg, acceptMsg]);
-        setSystemAlert(`🎉 Swap Match Granted! ${peer.name} approved your proposal. Go to Chats to connect!`);
-        setTimeout(() => setSystemAlert(null), 6000);
-      }, 3500);
-      return;
-    }
-
-    // SUPABASE MODE
     try {
       const newConn = await createConnection({
         senderId: userProfile.id,
         receiverId,
         status: 'pending',
         proposedSkill,
+        targetSkill: '',
         message: messageText
       });
 
@@ -273,7 +181,7 @@ export default function App() {
       setTimeout(async () => {
         try {
           await updateConnectionStatus(newConn.id, 'accepted');
-          setMatchRequests(current => 
+          setMatchRequests(current =>
             current.map(r => r.id === newConn.id ? { ...r, status: 'accepted' } : r)
           );
 
@@ -302,50 +210,6 @@ export default function App() {
   const handleSendMessage = async (swapId: string, text: string) => {
     if (!userProfile) return;
 
-    // MOCK MODE
-    if (!isSupabaseConfigured || isMockBypassed) {
-      const newMsg: Message = {
-        id: `msg_${Date.now()}`,
-        swapId,
-        senderId: userProfile.id,
-        text,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-
-      setMessages(prev => [...prev, newMsg]);
-
-      const recipient = profiles.find(p => p.id === swapId);
-      if (!recipient) return;
-
-      setTimeout(() => {
-        let replyText = "That sounds like an amazing plan! When are you free to schedule a session?";
-        
-        if (recipient.id === 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d') {
-          replyText = "Awesome! That Figma auto-layout technique is super powerful once you grasp constraints. Let's do a live Google Meet slot this Friday evening around 6 PM?";
-        } else if (recipient.id === 'c3d4e5f6-a7b8-9c0d-1e2f-3a4b5c6d7e8f') {
-          replyText = "Perfect! I'll walk you through setting up Linux network monitoring, and I can explain memory allocation rules in Rust. What IDE do you use?";
-        } else if (recipient.id === 'b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e') {
-          replyText = "Super clean! We can streamline your ML data cleaning steps using pandas and vectorization operations. Let's look at your Jupyter notebook soon.";
-        } else if (recipient.id === 'e5f6a7b8-c9d0-1e2f-3a4b-5c6d7e8f9a0b') {
-          replyText = "Solid. Concurrency channels in Golang are awesome for scalable pipelines. Happy to write some test microservices together.";
-        } else if (recipient.id === 'd4e5f6a7-b8c9-0d1e-2f3a-4b5c6d7e8f9a') {
-          replyText = "Excellent! Let's map out your Flutter widget hierarchy or Figma mockups. I'm excited for our swap session!";
-        }
-
-        const botMsg: Message = {
-          id: `msg_bot_${Date.now()}`,
-          swapId,
-          senderId: recipient.id,
-          text: replyText,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        };
-
-        setMessages(prev => [...prev, botMsg]);
-      }, 2000);
-      return;
-    }
-
-    // SUPABASE MODE
     try {
       const newMsg = await sendMessage({
         senderId: userProfile.id,
@@ -361,7 +225,7 @@ export default function App() {
       setTimeout(async () => {
         try {
           let replyText = "That sounds like an amazing plan! When are you free to schedule a session?";
-          
+
           if (recipient.id === 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d') {
             replyText = "Awesome! That Figma auto-layout technique is super powerful once you grasp constraints. Let's do a live Google Meet slot this Friday evening around 6 PM?";
           } else if (recipient.id === 'c3d4e5f6-a7b8-9c0d-1e2f-3a4b5c6d7e8f') {
@@ -396,39 +260,18 @@ export default function App() {
   const handleJoinTeam = async (teamId: string) => {
     if (!userProfile) return;
 
-    // MOCK MODE
-    if (!isSupabaseConfigured || isMockBypassed) {
-      setTeams(prev => {
-        const updatedTeams = prev.map(t => {
-          if (t.id === teamId) {
-            const joined = !t.joined;
-            return {
-              ...t,
-              joined,
-              membersCount: joined ? t.membersCount + 1 : Math.max(0, t.membersCount - 1)
-            };
-          }
-          return t;
-        });
-        writeLocalData(LOCAL_TEAMS_KEY, updatedTeams);
-        return updatedTeams;
-      });
-      return;
-    }
-
-    // SUPABASE MODE
     try {
       const team = teams.find(t => t.id === teamId);
       if (!team) return;
 
       if (team.joined) {
         await leaveTeam(teamId, userProfile.id);
-        setTeams(prev => 
+        setTeams(prev =>
           prev.map(t => t.id === teamId ? { ...t, joined: false, membersCount: Math.max(0, t.membersCount - 1) } : t)
         );
       } else {
         await joinTeam(teamId, userProfile.id);
-        setTeams(prev => 
+        setTeams(prev =>
           prev.map(t => t.id === teamId ? { ...t, joined: true, membersCount: t.membersCount + 1 } : t)
         );
       }
@@ -441,23 +284,6 @@ export default function App() {
   const handleCreateTeam = async (newTeamData: Omit<StudyTeam, 'id' | 'membersCount' | 'joined'>) => {
     if (!userProfile) return;
 
-    // MOCK MODE
-    if (!isSupabaseConfigured || isMockBypassed) {
-      const newTeam: StudyTeam = {
-        ...newTeamData,
-        id: `team_${Date.now()}`,
-        membersCount: 1,
-        joined: true
-      };
-      setTeams(prev => {
-        const updatedTeams = [newTeam, ...prev];
-        writeLocalData(LOCAL_TEAMS_KEY, updatedTeams);
-        return updatedTeams;
-      });
-      return;
-    }
-
-    // SUPABASE MODE
     try {
       const created = await createTeam(newTeamData, userProfile.id);
       setTeams(prev => [created, ...prev]);
@@ -469,15 +295,6 @@ export default function App() {
 
   // Save modified user profile
   const handleSaveUserProfile = async (updated: Profile) => {
-    // MOCK MODE
-    if (!isSupabaseConfigured || isMockBypassed) {
-      setUserProfile(updated);
-      writeLocalData(LOCAL_PROFILE_KEY, updated);
-      setProfiles(prev => prev.map(p => p.id === updated.id ? updated : p));
-      return;
-    }
-
-    // SUPABASE MODE
     try {
       const savedProfile = await upsertProfile(updated);
       setUserProfile(savedProfile);
@@ -491,7 +308,7 @@ export default function App() {
   // Get active chat contacts
   const activeChats = profiles.filter(profile => {
     if (!userProfile || profile.id === userProfile.id) return false;
-    
+
     const hasAcceptedRequest = matchRequests.some(
       r => (r.senderId === userProfile.id && r.receiverId === profile.id && r.status === 'accepted') ||
            (r.senderId === profile.id && r.receiverId === userProfile.id && r.status === 'accepted')
@@ -506,24 +323,23 @@ export default function App() {
     return <LoadingScreen />;
   }
 
-  const isUserAuthenticated = session !== null || isMockBypassed;
+  const isUserAuthenticated = session !== null;
 
   // Unauthenticated Views
   if (!isUserAuthenticated) {
     if (currentTab === 'landing') {
       return (
-        <Landing 
+        <Landing
           onStartSwapping={() => setCurrentTab('auth')}
           onAlreadyAccount={() => setCurrentTab('auth')}
         />
       );
     }
     return (
-      <AuthPages 
+      <AuthPages
         onAuthSuccess={(sess) => {
           setSession(sess);
         }}
-        onBypassMock={handleBypassMock}
       />
     );
   }
@@ -531,7 +347,7 @@ export default function App() {
   // Authenticated Application
   return (
     <div className="min-h-screen bg-[#f4f4f0] text-black font-sans flex flex-col select-none">
-      
+
       {/* Dynamic System Alert (Success matches) */}
       {systemAlert && (
         <div className="bg-[#bef264] border-b-4 border-black px-6 py-3 text-sm font-black font-mono text-black flex items-center justify-between z-50 sticky top-0 shadow-lg">
@@ -539,7 +355,7 @@ export default function App() {
             <Sparkles className="w-5 h-5 text-indigo-700 animate-spin" />
             <span>{systemAlert}</span>
           </div>
-          <button 
+          <button
             onClick={() => setSystemAlert(null)}
             className="border-2 border-black bg-white px-2 py-0.5 text-xs font-bold hover:bg-neutral-50"
           >
@@ -551,10 +367,10 @@ export default function App() {
       {/* Main Persistent Neo-Brutalist Nav-Header */}
       <header className="border-b-4 border-black bg-white sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-6 py-4 flex flex-col md:flex-row justify-between items-center gap-4">
-          
+
           {/* Logo */}
-          <div 
-            onClick={() => setCurrentTab('dashboard')} 
+          <div
+            onClick={() => setCurrentTab('dashboard')}
             className="flex items-center gap-2 cursor-pointer"
           >
             <span className="text-3xl font-black tracking-tighter uppercase font-mono">
@@ -646,9 +462,9 @@ export default function App() {
                 <span className="text-xs font-black block font-mono">{userProfile.name || 'Your Name'}</span>
                 <span className="text-[10px] text-slate-500 font-mono font-medium truncate max-w-[150px] block">{userProfile.college || 'Student'}</span>
               </div>
-              <img 
-                src={userProfile.avatar || 'https://images.unsplash.com/photo-1511367461989-f85a21fda167?w=150&auto=format&fit=crop&q=80'} 
-                alt={userProfile.name || 'Your Name'} 
+              <img
+                src={userProfile.avatar || 'https://images.unsplash.com/photo-1511367461989-f85a21fda167?w=150&auto=format&fit=crop&q=80'}
+                alt={userProfile.name || 'Your Name'}
                 onClick={() => setCurrentTab('profile')}
                 className="w-10 h-10 border-2 border-black cursor-pointer bg-[#bef264] hover:scale-105 transition-transform"
                 referrerPolicy="no-referrer"
@@ -667,15 +483,15 @@ export default function App() {
       {/* Render Subview Content */}
       <main className="flex-1 flex flex-col bg-[#f4f4f0]">
         {currentTab === 'dashboard' && userProfile && (
-          <Dashboard 
-            userProfile={userProfile} 
+          <Dashboard
+            userProfile={userProfile}
             setCurrentTab={setCurrentTab}
             activeChatsCount={activeChats.length}
           />
         )}
 
         {currentTab === 'explore' && userProfile && (
-          <Browse 
+          <Browse
             profiles={profiles}
             userProfile={userProfile}
             onRequestMatch={handleRequestMatch}
@@ -684,7 +500,7 @@ export default function App() {
         )}
 
         {currentTab === 'messenger' && userProfile && (
-          <Messenger 
+          <Messenger
             activeChats={activeChats}
             messages={messages}
             onSendMessage={handleSendMessage}
@@ -693,7 +509,7 @@ export default function App() {
         )}
 
         {currentTab === 'groups' && (
-          <Groups 
+          <Groups
             teams={teams}
             onJoinTeam={handleJoinTeam}
             onCreateTeam={handleCreateTeam}
@@ -702,7 +518,7 @@ export default function App() {
         )}
 
         {currentTab === 'profile' && userProfile && (
-          <ProfileEditor 
+          <ProfileEditor
             profile={userProfile}
             onSave={handleSaveUserProfile}
           />

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { supabase, isSupabaseConfigured } from '../../supabase/client';
+import { supabase } from '../../supabase/client';
 import {
   loginSchema,
   signupSchema,
@@ -16,12 +16,11 @@ import BrutalistButton from '../BrutalistButton';
 
 interface AuthPagesProps {
   onAuthSuccess: (session: any) => void;
-  onBypassMock: () => void;
 }
 
 type AuthTab = 'login' | 'signup' | 'forgot' | 'reset';
 
-export default function AuthPages({ onAuthSuccess, onBypassMock }: AuthPagesProps) {
+export default function AuthPages({ onAuthSuccess }: AuthPagesProps) {
   const [tab, setTab] = useState<AuthTab>('login');
   const [loading, setLoading] = useState(false);
 
@@ -81,11 +80,6 @@ export default function AuthPages({ onAuthSuccess, onBypassMock }: AuthPagesProp
   const onLogin = async (data: any) => {
     setLoading(true);
     try {
-      if (!isSupabaseConfigured) {
-        toast.success('Bypassing in Mock Mode.');
-        onBypassMock();
-        return;
-      }
       const { data: authData, error } = await supabase.auth.signInWithPassword({
         email: data.email,
         password: data.password,
@@ -103,11 +97,6 @@ export default function AuthPages({ onAuthSuccess, onBypassMock }: AuthPagesProp
   const onSignup = async (data: any) => {
     setLoading(true);
     try {
-      if (!isSupabaseConfigured) {
-        toast.success('Bypassing in Mock Mode.');
-        onBypassMock();
-        return;
-      }
       const { data: authData, error } = await supabase.auth.signUp({
         email: data.email,
         password: data.password,
@@ -144,10 +133,6 @@ export default function AuthPages({ onAuthSuccess, onBypassMock }: AuthPagesProp
   const onForgotPassword = async (data: any) => {
     setLoading(true);
     try {
-      if (!isSupabaseConfigured) {
-        toast.error('Supabase is not configured for forgot password.');
-        return;
-      }
       const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
         redirectTo: `${window.location.origin}/#type=recovery`,
       });
@@ -163,10 +148,6 @@ export default function AuthPages({ onAuthSuccess, onBypassMock }: AuthPagesProp
   const onResetPassword = async (data: any) => {
     setLoading(true);
     try {
-      if (!isSupabaseConfigured) {
-        toast.error('Supabase is not configured.');
-        return;
-      }
       const { error } = await supabase.auth.updateUser({
         password: data.password,
       });
@@ -267,17 +248,6 @@ export default function AuthPages({ onAuthSuccess, onBypassMock }: AuthPagesProp
                 >
                   {loading ? 'Logging in...' : 'Sign In'} <ArrowRight className="w-4 h-4 ml-1" />
                 </BrutalistButton>
-
-                {!isSupabaseConfigured && (
-                  <BrutalistButton
-                    variant="white"
-                    className="w-full justify-center flex py-2 border-dashed"
-                    onClick={onBypassMock}
-                    type="button"
-                  >
-                    Bypass in Mock Mode (No DB)
-                  </BrutalistButton>
-                )}
               </div>
 
               <p className="text-xs text-center text-slate-500 pt-2 font-sans font-medium">

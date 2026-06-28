@@ -19,6 +19,7 @@ export interface MatchRequest {
   receiverId: string;
   status: 'pending' | 'accepted' | 'declined';
   proposedSkill: string;
+  targetSkill?: string;
   message: string;
   timestamp: string;
 }

@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Profile } from '../types';
 import { postSchema } from '../lib/schemas';
-import { supabase, isSupabaseConfigured } from '../supabase/client';
+import { supabase } from '../supabase/client';
 import { fetchPosts, createPost, deletePost, Post } from '../services/postService';
 import BrutalistCard from './BrutalistCard';
 import BrutalistButton from './BrutalistButton';
@@ -20,48 +20,21 @@ export default function Dashboard({ userProfile, setCurrentTab, activeChatsCount
   const [posts, setPosts] = useState<Post[]>([]);
   const [isPostOpen, setIsPostOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [postsLoading, setPostsLoading] = useState(true);
 
   const loadPosts = async () => {
-    if (!isSupabaseConfigured) {
-      // Fallback mock posts
-      setPosts([
-        {
-          id: 'mock-1',
-          userId: 'some-user',
-          title: 'Need help with Rust smart pointers',
-          content: 'I am struggling to understand Rc, Arc, and RefCell. Happy to teach React state management or CSS layout in exchange.',
-          skills: ['Rust', 'Systems'],
-          createdAt: 'Jun 28',
-          profiles: {
-            name: 'Chaitanya K.',
-            avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
-            college: 'IIT Bombay'
-          }
-        },
-        {
-          id: 'mock-2',
-          userId: 'some-user-2',
-          title: 'Figma Auto-layout session',
-          content: 'Let\'s run a quick 1-hour session on Figma constraints and grids. I want to learn basic Python scripting.',
-          skills: ['Figma', 'UI Design'],
-          createdAt: 'Jun 27',
-          profiles: {
-            name: 'Arpit Bhardwaj',
-            avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-            college: 'NSUT Delhi'
-          }
-        }
-      ]);
-      return;
+    try {
+      const data = await fetchPosts();
+      setPosts(data);
+    } catch {
+      // Error handled silently — posts will show empty state
+    } finally {
+      setPostsLoading(false);
     }
-    const data = await fetchPosts();
-    setPosts(data);
   };
 
   useEffect(() => {
     loadPosts();
-
-    if (!isSupabaseConfigured) return;
 
     // Realtime subscription for posts
     const channel = supabase
@@ -98,32 +71,13 @@ export default function Dashboard({ userProfile, setCurrentTab, activeChatsCount
         .map((s: string) => s.trim())
         .filter((s: string) => s.length > 0);
 
-      if (!isSupabaseConfigured) {
-        // Add to local mock posts
-        const newPost: Post = {
-          id: `post-${Date.now()}`,
-          userId: userProfile.id,
-          title: data.title,
-          content: data.content,
-          skills: skillsArray,
-          createdAt: 'Just now',
-          profiles: {
-            name: userProfile.name,
-            avatar: userProfile.avatar,
-            college: userProfile.college
-          }
-        };
-        setPosts(prev => [newPost, ...prev]);
-        toast.success('Mock post created.');
-      } else {
-        await createPost({
-          userId: userProfile.id,
-          title: data.title,
-          content: data.content,
-          skills: skillsArray
-        });
-        toast.success('Post published successfully.');
-      }
+      await createPost({
+        userId: userProfile.id,
+        title: data.title,
+        content: data.content,
+        skills: skillsArray
+      });
+      toast.success('Post published successfully.');
       setIsPostOpen(false);
       reset();
     } catch (err: any) {
@@ -135,13 +89,8 @@ export default function Dashboard({ userProfile, setCurrentTab, activeChatsCount
 
   const handleDelete = async (postId: string) => {
     try {
-      if (!isSupabaseConfigured) {
-        setPosts(prev => prev.filter(p => p.id !== postId));
-        toast.success('Mock post deleted.');
-      } else {
-        await deletePost(postId);
-        toast.success('Post deleted.');
-      }
+      await deletePost(postId);
+      toast.success('Post deleted.');
     } catch (err: any) {
       toast.error(err.message || 'Failed to delete post.');
     }
