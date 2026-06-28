@@ -1,74 +1,82 @@
-import React, { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Profile } from '../types';
 import { POPULAR_SKILLS } from '../data';
-import { User, Contact, MapPin, School, HelpCircle, Check, BookOpen, GraduationCap } from 'lucide-react';
+import { profileSchema } from '../lib/schemas';
+import { User, Contact, MapPin, School, HelpCircle, Check, BookOpen, GraduationCap, AlertCircle } from 'lucide-react';
 import BrutalistCard from './BrutalistCard';
 import BrutalistButton from './BrutalistButton';
 
 interface ProfileEditorProps {
   profile: Profile;
-  onSave: (updated: Profile) => void | Promise<void>;
+  onSave: (updated: Profile) => void;
 }
 
 export default function ProfileEditor({ profile, onSave }: ProfileEditorProps) {
-  const [name, setName] = useState(profile.name);
-  const [college, setCollege] = useState(profile.college);
-  const [bio, setBio] = useState(profile.bio);
-  const [location, setLocation] = useState(profile.location || '');
-  const [contactUrl, setContactUrl] = useState(profile.contactUrl || '');
-  const [avatar, setAvatar] = useState(profile.avatar);
-  const [teachSkills, setTeachSkills] = useState<string[]>(profile.teachSkills);
-  const [learnSkills, setLearnSkills] = useState<string[]>(profile.learnSkills);
   const [success, setSuccess] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
+
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    formState: { errors },
+  } = useForm({
+    resolver: zodResolver(profileSchema),
+    defaultValues: {
+      name: profile.name || '',
+      college: profile.college || '',
+      bio: profile.bio || '',
+      location: profile.location || '',
+      contactUrl: profile.contactUrl || '',
+      avatar: profile.avatar || '',
+      teachSkills: profile.teachSkills || [],
+      learnSkills: profile.learnSkills || [],
+    }
+  });
+
+  const teachSkills = watch('teachSkills') || [];
+  const learnSkills = watch('learnSkills') || [];
+  const avatar = watch('avatar') || '';
+  const name = watch('name') || '';
+  const college = watch('college') || '';
 
   const toggleTeachSkill = (skill: string) => {
-    if (teachSkills.includes(skill)) {
-      setTeachSkills(teachSkills.filter(s => s !== skill));
-    } else {
-      setTeachSkills([...teachSkills, skill]);
-    }
+    const updated = teachSkills.includes(skill)
+      ? teachSkills.filter(s => s !== skill)
+      : [...teachSkills, skill];
+    setValue('teachSkills', updated, { shouldValidate: true });
   };
 
   const toggleLearnSkill = (skill: string) => {
-    if (learnSkills.includes(skill)) {
-      setLearnSkills(learnSkills.filter(s => s !== skill));
-    } else {
-      setLearnSkills([...learnSkills, skill]);
-    }
+    const updated = learnSkills.includes(skill)
+      ? learnSkills.filter(s => s !== skill)
+      : [...learnSkills, skill];
+    setValue('learnSkills', updated, { shouldValidate: true });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSaving(true);
+  const onSubmit = (data: any) => {
+    onSave({
+      ...profile,
+      name: data.name,
+      college: data.college,
+      bio: data.bio,
+      location: data.location,
+      contactUrl: data.contactUrl,
+      avatar: data.avatar,
+      teachSkills: data.teachSkills,
+      learnSkills: data.learnSkills
+    });
 
-    try {
-      await onSave({
-        ...profile,
-        name,
-        college,
-        bio,
-        location,
-        contactUrl,
-        avatar,
-        teachSkills,
-        learnSkills
-      });
-
-      setSuccess(true);
-      setTimeout(() => {
-        setSuccess(false);
-      }, 3000);
-    } catch {
+    setSuccess(true);
+    setTimeout(() => {
       setSuccess(false);
-    } finally {
-      setIsSaving(false);
-    }
+    }, 3000);
   };
 
   return (
-    <div className="p-6 max-w-4xl mx-auto w-full space-y-6 font-mono text-left">
-      
+    <div className="p-6 max-w-4xl mx-auto w-full space-y-6 font-mono text-left select-none">
       {/* Banner */}
       <div className="bg-[#bef264] border-4 border-black p-4 shadow-[4px_4px_0px_0px_#000] text-black flex justify-between items-center">
         <div>
@@ -84,14 +92,13 @@ export default function ProfileEditor({ profile, onSave }: ProfileEditorProps) {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
-        
+      <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
         {/* Left Column: Image & Bio (Span 4) */}
         <div className="md:col-span-4 space-y-4">
           <BrutalistCard className="text-center p-6 border-4 border-black bg-white flex flex-col items-center">
             <img 
-              src={avatar} 
-              alt={name} 
+              src={avatar || 'https://images.unsplash.com/photo-1511367461989-f85a21fda167?w=150&auto=format&fit=crop&q=80'} 
+              alt={name || 'User'} 
               className="w-24 h-24 border-4 border-black bg-[#bef264] rounded-none mb-3"
               referrerPolicy="no-referrer"
             />
@@ -103,10 +110,14 @@ export default function ProfileEditor({ profile, onSave }: ProfileEditorProps) {
               <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Avatar Image URL:</label>
               <input
                 type="text"
-                value={avatar}
-                onChange={(e) => setAvatar(e.target.value)}
+                {...register('avatar')}
                 className="w-full bg-white border-2 border-black p-2 text-[10px] font-bold focus:outline-none"
               />
+              {errors.avatar && (
+                <p className="text-[9px] text-red-600 font-bold mt-1 flex items-center gap-0.5">
+                  <AlertCircle className="w-3 h-3" /> {errors.avatar.message}
+                </p>
+              )}
             </div>
           </BrutalistCard>
 
@@ -124,7 +135,6 @@ export default function ProfileEditor({ profile, onSave }: ProfileEditorProps) {
         {/* Right Column: Bio form values (Span 8) */}
         <div className="md:col-span-8 space-y-6">
           <BrutalistCard className="border-4 border-black bg-white p-6 space-y-4">
-            
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-black uppercase mb-1 flex items-center gap-1">
@@ -132,11 +142,14 @@ export default function ProfileEditor({ profile, onSave }: ProfileEditorProps) {
                 </label>
                 <input
                   type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  {...register('name')}
                   className="w-full bg-white border-2 border-black p-2.5 text-xs font-bold focus:outline-none"
                 />
+                {errors.name && (
+                  <p className="text-[10px] text-red-600 font-bold mt-1 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> {errors.name.message}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -145,11 +158,14 @@ export default function ProfileEditor({ profile, onSave }: ProfileEditorProps) {
                 </label>
                 <input
                   type="text"
-                  required
-                  value={college}
-                  onChange={(e) => setCollege(e.target.value)}
+                  {...register('college')}
                   className="w-full bg-white border-2 border-black p-2.5 text-xs font-bold focus:outline-none"
                 />
+                {errors.college && (
+                  <p className="text-[10px] text-red-600 font-bold mt-1 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> {errors.college.message}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -160,9 +176,8 @@ export default function ProfileEditor({ profile, onSave }: ProfileEditorProps) {
                 </label>
                 <input
                   type="text"
-                  value={location}
                   placeholder="e.g. Delhi, IN"
-                  onChange={(e) => setLocation(e.target.value)}
+                  {...register('location')}
                   className="w-full bg-white border-2 border-black p-2.5 text-xs font-bold focus:outline-none"
                 />
               </div>
@@ -173,9 +188,8 @@ export default function ProfileEditor({ profile, onSave }: ProfileEditorProps) {
                 </label>
                 <input
                   type="text"
-                  value={contactUrl}
                   placeholder="e.g. mailto:example@college.edu"
-                  onChange={(e) => setContactUrl(e.target.value)}
+                  {...register('contactUrl')}
                   className="w-full bg-white border-2 border-black p-2.5 text-xs font-bold focus:outline-none"
                 />
               </div>
@@ -184,12 +198,15 @@ export default function ProfileEditor({ profile, onSave }: ProfileEditorProps) {
             <div>
               <label className="block text-xs font-black uppercase mb-1">A Short Pitch (Bio):</label>
               <textarea
-                required
                 rows={3}
-                value={bio}
-                onChange={(e) => setBio(e.target.value)}
+                {...register('bio')}
                 className="w-full bg-white border-2 border-black p-3 text-xs font-bold focus:outline-none"
               />
+              {errors.bio && (
+                <p className="text-[10px] text-red-600 font-bold mt-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" /> {errors.bio.message}
+                </p>
+              )}
             </div>
 
             {/* Select Teach Skills */}
@@ -197,6 +214,11 @@ export default function ProfileEditor({ profile, onSave }: ProfileEditorProps) {
               <label className="text-xs font-black uppercase mb-2 block flex items-center gap-1">
                 <BookOpen className="w-4 h-4 text-emerald-600" /> Skills I Can Teach:
               </label>
+              {errors.teachSkills && (
+                <p className="text-[10px] text-red-600 font-bold mb-2 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" /> {errors.teachSkills.message}
+                </p>
+              )}
               <div className="flex flex-wrap gap-2 bg-slate-50 p-3 border-2 border-black max-h-[140px] overflow-y-auto">
                 {POPULAR_SKILLS.map(skill => {
                   const isSelected = teachSkills.includes(skill);
@@ -223,6 +245,11 @@ export default function ProfileEditor({ profile, onSave }: ProfileEditorProps) {
               <label className="text-xs font-black uppercase mb-2 block flex items-center gap-1">
                 <GraduationCap className="w-4 h-4 text-indigo-600" /> Skills I Want to Learn:
               </label>
+              {errors.learnSkills && (
+                <p className="text-[10px] text-red-600 font-bold mb-2 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" /> {errors.learnSkills.message}
+                </p>
+              )}
               <div className="flex flex-wrap gap-2 bg-slate-50 p-3 border-2 border-black max-h-[140px] overflow-y-auto">
                 {POPULAR_SKILLS.map(skill => {
                   const isSelected = learnSkills.includes(skill);
@@ -249,17 +276,13 @@ export default function ProfileEditor({ profile, onSave }: ProfileEditorProps) {
                 variant="yellow"
                 className="w-full py-3"
                 type="submit"
-                disabled={isSaving}
               >
-                {isSaving ? 'Saving...' : 'Save My Changes & Re-Sync Matches'}
+                Save My Changes & Re-Sync Matches
               </BrutalistButton>
             </div>
-
           </BrutalistCard>
         </div>
-
       </form>
-
     </div>
   );
 }

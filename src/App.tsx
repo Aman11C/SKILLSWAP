@@ -7,6 +7,9 @@ import Groups from './components/Groups';
 import ProfileEditor from './components/ProfileEditor';
 import LoadingScreen from './components/LoadingScreen';
 import ErrorBanner from './components/ErrorBanner';
+import AuthPages from './components/auth/AuthPages';
+import Dashboard from './components/Dashboard';
+import Settings from './components/Settings';
 
 // Import fallback data
 import {
@@ -41,8 +44,10 @@ import {
   MessageSquare, 
   Users, 
   User, 
-  ArrowLeft,
-  Sparkles
+  LayoutDashboard,
+  Settings as SettingsIcon,
+  Sparkles,
+  LogOut
 } from 'lucide-react';
 
 const LOCAL_PROFILE_KEY = 'skillswap:userProfile';
@@ -62,10 +67,16 @@ function writeLocalData<T>(key: string, value: T) {
 }
 
 export default function App() {
+  // Session State
+  const [session, setSession] = useState<any>(null);
+  const [isMockBypassed, setIsMockBypassed] = useState<boolean>(false);
+
   // Navigation State
-  const [currentTab, setCurrentTab] = useState<'landing' | 'explore' | 'messenger' | 'groups' | 'profile'>('landing');
+  const [currentTab, setCurrentTab] = useState<
+    'landing' | 'auth' | 'dashboard' | 'explore' | 'messenger' | 'groups' | 'profile' | 'settings'
+  >('landing');
   
-  // States
+  // Data States
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [userProfile, setUserProfile] = useState<Profile | null>(null);
   const [matchRequests, setMatchRequests] = useState<MatchRequest[]>([]);
@@ -76,56 +87,17 @@ export default function App() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Initialize and load all data (Supabase or Mock)
-  const initApp = async () => {
+  // Initialize and load all data (Supabase Mode)
+  const initSupabaseData = async (userId: string) => {
     try {
       setIsLoading(true);
       setError(null);
 
-      if (!isSupabaseConfigured) {
-        // Fallback to local mock data
-        console.log('Using local mock data (Supabase not configured).');
-        if (import.meta.env.PROD) {
-          setError('Supabase is not configured on Vercel. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, then redeploy.');
-        }
-        const localUser = readLocalData(
-          LOCAL_PROFILE_KEY,
-          INITIAL_PROFILES.find(p => p.id === 'user_me') || INITIAL_PROFILES[0]
-        );
-        const localTeams = readLocalData(LOCAL_TEAMS_KEY, INITIAL_TEAMS);
-        setUserProfile(localUser);
-        setProfiles([localUser, ...INITIAL_PROFILES.filter(p => p.id !== localUser.id)]);
-        setTeams(localTeams);
-        setMessages(INITIAL_MESSAGES);
-        setMatchRequests([]);
-        setIsLoading(false);
-        return;
-      }
-
-      // 1. Authenticate anonymously
-      let userId = '';
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError) throw sessionError;
-
-      if (session) {
-        userId = session.user.id;
-      } else {
-        const { data: authData, error: authError } = await supabase.auth.signInAnonymously();
-        if (authError) {
-          throw new Error(`${authError.message}. Enable Anonymous sign-ins in Supabase Authentication settings.`);
-        }
-        userId = authData.user?.id || '';
-      }
-
-      if (!userId) {
-        throw new Error('Authentication failed: No user ID established.');
-      }
-
-      // 2. Ensure profile exists for user in public.profiles table
+      // Ensure profile exists for user in public.profiles table
       const profile = await ensureUserProfile(userId);
       setUserProfile(profile);
 
-      // 3. Fetch all application data
+      // Fetch all application data
       const [allProfiles, allTeams, allMessages, allConns] = await Promise.all([
         fetchAllProfiles(),
         fetchAllTeams(userId),
@@ -137,6 +109,7 @@ export default function App() {
       setTeams(allTeams);
       setMessages(allMessages);
       setMatchRequests(allConns);
+      setCurrentTab('dashboard');
     } catch (err: any) {
       console.error('Initialization error:', err);
       setError(err.message || 'Failed to sync with database. Verify connection keys.');
@@ -145,16 +118,107 @@ export default function App() {
     }
   };
 
+  // Initialize mock fallback data
+  const initMockData = () => {
+    console.log('Using local mock data (Supabase not configured or bypassed).');
+    const localUser = readLocalData(
+      LOCAL_PROFILE_KEY,
+      INITIAL_PROFILES.find(p => p.id === 'user_me') || INITIAL_PROFILES[0]
+    );
+    const localTeams = readLocalData(LOCAL_TEAMS_KEY, INITIAL_TEAMS);
+    setUserProfile(localUser);
+    setProfiles([localUser, ...INITIAL_PROFILES.filter(p => p.id !== localUser.id)]);
+    setTeams(localTeams);
+    setMessages(INITIAL_MESSAGES);
+    setMatchRequests([]);
+    setCurrentTab('dashboard');
+    setIsLoading(false);
+  };
+
+  // Listen to Supabase Session validation checks
   useEffect(() => {
-    initApp();
+    if (!isSupabaseConfigured) {
+      setIsLoading(false);
+      return;
+    }
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session) {
+        initSupabaseData(session.user.id);
+      } else {
+        setIsLoading(false);
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session) {
+        initSupabaseData(session.user.id);
+      } else {
+        setUserProfile(null);
+        setSession(null);
+        setCurrentTab('landing');
+        setIsLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
+
+  // Realtime subscription for messages
+  useEffect(() => {
+    if (!userProfile || !isSupabaseConfigured) return;
+
+    const messageChannel = supabase
+      .channel('realtime-messages')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages' },
+        async () => {
+          try {
+            const allMessages = await fetchMessagesForUser(userProfile.id);
+            setMessages(allMessages);
+          } catch (err) {
+            console.error('Error fetching realtime messages:', err);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(messageChannel);
+    };
+  }, [userProfile]);
+
+  const handleBypassMock = () => {
+    setIsMockBypassed(true);
+    initMockData();
+  };
+
+  const handleSignOut = async () => {
+    setIsLoading(true);
+    try {
+      if (isSupabaseConfigured) {
+        await supabase.auth.signOut();
+      }
+      setSession(null);
+      setIsMockBypassed(false);
+      setUserProfile(null);
+      setCurrentTab('landing');
+    } catch (err: any) {
+      setError(err.message || 'Signout failed.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Handler: Request a new match
   const handleRequestMatch = async (receiverId: string, proposedSkill: string, messageText: string) => {
     if (!userProfile) return;
     
     // MOCK MODE
-    if (!isSupabaseConfigured) {
+    if (!isSupabaseConfigured || isMockBypassed) {
       const newConn: MatchRequest = {
         id: `req_${Date.now()}`,
         senderId: userProfile.id,
@@ -239,7 +303,7 @@ export default function App() {
     if (!userProfile) return;
 
     // MOCK MODE
-    if (!isSupabaseConfigured) {
+    if (!isSupabaseConfigured || isMockBypassed) {
       const newMsg: Message = {
         id: `msg_${Date.now()}`,
         swapId,
@@ -333,7 +397,7 @@ export default function App() {
     if (!userProfile) return;
 
     // MOCK MODE
-    if (!isSupabaseConfigured) {
+    if (!isSupabaseConfigured || isMockBypassed) {
       setTeams(prev => {
         const updatedTeams = prev.map(t => {
           if (t.id === teamId) {
@@ -378,7 +442,7 @@ export default function App() {
     if (!userProfile) return;
 
     // MOCK MODE
-    if (!isSupabaseConfigured) {
+    if (!isSupabaseConfigured || isMockBypassed) {
       const newTeam: StudyTeam = {
         ...newTeamData,
         id: `team_${Date.now()}`,
@@ -406,7 +470,7 @@ export default function App() {
   // Save modified user profile
   const handleSaveUserProfile = async (updated: Profile) => {
     // MOCK MODE
-    if (!isSupabaseConfigured) {
+    if (!isSupabaseConfigured || isMockBypassed) {
       setUserProfile(updated);
       writeLocalData(LOCAL_PROFILE_KEY, updated);
       setProfiles(prev => prev.map(p => p.id === updated.id ? updated : p));
@@ -442,8 +506,31 @@ export default function App() {
     return <LoadingScreen />;
   }
 
+  const isUserAuthenticated = session !== null || isMockBypassed;
+
+  // Unauthenticated Views
+  if (!isUserAuthenticated) {
+    if (currentTab === 'landing') {
+      return (
+        <Landing 
+          onStartSwapping={() => setCurrentTab('auth')}
+          onAlreadyAccount={() => setCurrentTab('auth')}
+        />
+      );
+    }
+    return (
+      <AuthPages 
+        onAuthSuccess={(sess) => {
+          setSession(sess);
+        }}
+        onBypassMock={handleBypassMock}
+      />
+    );
+  }
+
+  // Authenticated Application
   return (
-    <div className="min-h-screen bg-[#f4f4f0] text-black font-sans flex flex-col">
+    <div className="min-h-screen bg-[#f4f4f0] text-black font-sans flex flex-col select-none">
       
       {/* Dynamic System Alert (Success matches) */}
       {systemAlert && (
@@ -462,12 +549,12 @@ export default function App() {
       )}
 
       {/* Main Persistent Neo-Brutalist Nav-Header */}
-      <header className="border-b-4 border-black bg-white sticky top-0 z-40 select-none">
+      <header className="border-b-4 border-black bg-white sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-6 py-4 flex flex-col md:flex-row justify-between items-center gap-4">
           
           {/* Logo */}
           <div 
-            onClick={() => setCurrentTab('landing')} 
+            onClick={() => setCurrentTab('dashboard')} 
             className="flex items-center gap-2 cursor-pointer"
           >
             <span className="text-3xl font-black tracking-tighter uppercase font-mono">
@@ -480,15 +567,16 @@ export default function App() {
 
           {/* Navigation Control Group */}
           <div className="flex flex-wrap items-center gap-2 font-mono">
-            
-            {currentTab !== 'landing' && (
-              <button
-                onClick={() => setCurrentTab('landing')}
-                className="flex items-center gap-1 px-3 py-2 border-2 border-black text-xs font-bold bg-slate-100 hover:bg-neutral-200 shadow-[2px_2px_0px_#000] active:translate-y-0.5"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" /> Back Home
-              </button>
-            )}
+            <button
+              onClick={() => setCurrentTab('dashboard')}
+              className={`px-4 py-2 border-2 border-black text-xs font-black uppercase shadow-[2px_2px_0px_#000] active:translate-y-0.5 ${
+                currentTab === 'dashboard' ? 'bg-[#bef264]' : 'bg-white hover:bg-neutral-50'
+              }`}
+            >
+              <span className="flex items-center gap-1.5">
+                <LayoutDashboard className="w-3.5 h-3.5" /> Dashboard
+              </span>
+            </button>
 
             <button
               onClick={() => setCurrentTab('explore')}
@@ -539,6 +627,16 @@ export default function App() {
               </span>
             </button>
 
+            <button
+              onClick={() => setCurrentTab('settings')}
+              className={`px-4 py-2 border-2 border-black text-xs font-black uppercase shadow-[2px_2px_0px_#000] active:translate-y-0.5 ${
+                currentTab === 'settings' ? 'bg-[#bef264]' : 'bg-white hover:bg-neutral-50'
+              }`}
+            >
+              <span className="flex items-center gap-1.5">
+                <SettingsIcon className="w-3.5 h-3.5" /> Settings
+              </span>
+            </button>
           </div>
 
           {/* Quick Profile Widget */}
@@ -568,13 +666,14 @@ export default function App() {
 
       {/* Render Subview Content */}
       <main className="flex-1 flex flex-col bg-[#f4f4f0]">
-        {currentTab === 'landing' && (
-          <Landing 
-            onStartSwapping={() => setCurrentTab('explore')}
-            onAlreadyAccount={() => setCurrentTab('explore')}
+        {currentTab === 'dashboard' && userProfile && (
+          <Dashboard 
+            userProfile={userProfile} 
+            setCurrentTab={setCurrentTab}
+            activeChatsCount={activeChats.length}
           />
         )}
-        
+
         {currentTab === 'explore' && userProfile && (
           <Browse 
             profiles={profiles}
@@ -607,6 +706,10 @@ export default function App() {
             profile={userProfile}
             onSave={handleSaveUserProfile}
           />
+        )}
+
+        {currentTab === 'settings' && (
+          <Settings onSignOut={handleSignOut} />
         )}
       </main>
 
